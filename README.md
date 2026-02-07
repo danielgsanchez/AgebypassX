@@ -1,136 +1,102 @@
-# 🛡️ AgebypassX – v2.0.0  
-Bypass **Twitter/X**'s age restrictions and unlock **sensitive media** — all **without compromising your privacy**.
+# 🛡️ AgebypassX – v2.1.1  
+Bypass **Twitter/X**’s age restrictions and unlock **sensitive media** — all **without compromising your privacy**.
+
+> This is a fork of **AgebypassX** focused on **stability and reliability**, using a refined webpack-gating approach while preserving the original project’s privacy-first philosophy.
 
 ---
 
-## 🚀 Quick Setup Guide (Recommended) 
+## 🚀 Quick Setup Guide (Recommended)
 1. Install **Tampermonkey** (if not already installed).  
 2. Install the **AgebypassX** userscript.  
-3. Reopen X/Twitter — the **green indicator dot** should appear if everything is set up correctly. ✅  
+3. Open X/Twitter — the bypass activates automatically during page load. ✅  
 
+> ℹ️ This edition runs silently in the background and does not require user interaction.
 
 ---
 
 ## 🔒 Privacy Matters
-Unlike other bypass scripts, **AgebypassX**:
+Like the original AgebypassX, this version:
 - **Does NOT** send your data anywhere.
-- **Does NOT** modify your account or cookies.
+- **Does NOT** modify your account, cookies, or local storage.
 - **Does NOT** include analytics, ads, or tracking.
-- Everything runs **locally** via Tampermonkey.
+- Runs entirely **locally** via Tampermonkey.
 
-Your privacy stays protected. 🛡️
-
----
-
-## 📸 How It Works 
-Once installed, a small **animated dot** appears at the top-right of the page:
-- 🟠 **Orange Dot (Pulsing)** → Script is **initializing** and searching for webpack chunks  
-- 🟢 **Green Dot** → Script is **active** and successfully patched sensitive media settings ✅  
-- 🔴 **Red Dot** → Failed to hook webpack or find sensitive media modules ❌  
-
-**Enhanced Tooltip** (hover over dot):
-- Shows **AgebypassX v2.0.0** version info
-- **Status**: Active/Failed with detailed reason
-- **Webpack**: Hook status (Hooked/Not hooked)  
-- **Intercepts**: Number of webpack chunks intercepted
-- **Patches**: Number of successful patches applied
-- **Last**: Timestamp of most recent patch
-
-**Debug Console** (for troubleshooting):
-```javascript
-// Enable debug logging
-window.AgebypassX.config.debug = true;
-
-// Check current status
-window.AgebypassX.state;
-
-// Force webpack re-check
-window.AgebypassX.forceWebpackCheck();
-```
+Your privacy remains fully protected. 🛡️
 
 ---
 
-## 🛠️ Troubleshooting v1.3.0
+## 📸 How It Works (v2.1.x)
+
+This version uses a **controlled Webpack hydration gate** combined with an **early state patch**:
+
+- Intercepts `window.__INITIAL_STATE__` **before React hydration**
+- Disables the age-assurance feature flag **once, at bootstrap**
+- Temporarily queues Webpack chunks during initialization
+- Releases immediately after patching (with a hard failsafe)
+
+### Why this approach?
+- Avoids aggressive global monkey-patching
+- Preserves React and Webpack invariants
+- Prevents UI freezes and infinite loading states
+- Works consistently across normal reloads and hard refreshes
+
+The script self-disables after initialization and does **not** interfere with runtime behavior.
+
+---
+
+## 🛠️ Troubleshooting (v2.1.x)
 
 ### Basic Issues
-- If the indicator dot is **red**, reload the page and check console for errors
-- Ensure Tampermonkey is **enabled** and script is **active**
-- Use a **VPN** and set your location **outside of the UK**
-- Make sure your **DNS is handled by the VPN** — avoid UK-based DNS
-- **Clear your cookies** and **log out** of your X/Twitter session before enabling the script
-- Tested only on **Chromium-based browsers** — other browsers may not work
+- If sensitive media is still blocked, refresh the page once
+- Ensure Tampermonkey is enabled and the script is active
+- Tested on **Chromium-based browsers** (Brave, Chrome, Edge)
+- Some regions (e.g. UK) may still require VPN or DNS changes
 
-### Advanced Debugging (v1.3.0)
-1. **Enable Debug Mode**:
-   ```javascript
-   // In browser console on X.com
-   window.AgebypassX.config.debug = true;
-   ```
-
-2. **Check Status**:
-   ```javascript
-   // View detailed status
-   console.log(window.AgebypassX.state);
-   ```
-
-3. **Common Issues**:
-   - **"Webpack: Not hooked"** → X.com's webpack chunks not found (try refreshing)
-   - **"Intercepts: 0"** → No webpack chunks being loaded (check if logged in)
-   - **"Patches: 0"** → Sensitive media modules not found (X.com may have changed structure)
-
-4. **Force Re-check**:
-   ```javascript
-   // Manually trigger webpack hook attempt
-   window.AgebypassX.forceWebpackCheck();
-   ```
-
-### Reporting Issues
-For bug reports, [**open a GitHub issue**](https://github.com/Saganaki22/AgebypassX/issues) and include:
-- Browser version and type
-- Console error messages (with debug enabled)
-- Screenshot of status tooltip
+### Important Notes
+- This edition **does not include** a UI indicator or debug console
+- No manual interaction is required
+- If X/Twitter changes its bootstrap architecture, an update may be required
 
 ---
 
 ## 🧑‍💻 Source Code
-Open-source and fully transparent:  
-🔗 [https://github.com/Saganaki22/AgebypassX](https://github.com/Saganaki22/AgebypassX)
+Original project by **Saganaki22**:  
+🔗 https://github.com/Saganaki22/AgebypassX
+
+This fork preserves the original license and intent, with internal architectural refinements for stability.
 
 ---
 
 ## 📜 License
 Licensed under the [MIT License](https://opensource.org/licenses/MIT).  
-Free to audit, fork, and improve.
-
----
-
-## ⭐ Support
-💡 Have feedback, feature requests, or just want to support the project?  
-Visit the GitHub repository:  
-🔗 **[https://github.com/Saganaki22/AgebypassX](https://github.com/Saganaki22/AgebypassX)**
+Free to audit, fork, and modify.
 
 ---
 
 ## 🔄 Version History
 
-### v2.0.0 - Simplified
+### v2.1.1 – Stable Webpack Gate (Fork)
+- Refined webpack interception to **preserve array identity**
+- Early, one-shot patch of age-assurance feature flag
+- Removed permanent global monkey-patching
+- Added hard failsafe to prevent UI lockups
+- Improved reliability across reloads and cache states
 
-### v1.3.0  - Webpack Edition
-- **🆕 Modern Architecture**: Completely rewritten to use webpack chunk interception
-- **🎯 Enhanced Detection**: Targets `SensitiveMediaSettingsQuery` and related modules
-- **📊 Advanced Status**: Detailed statistics, debug API, and enhanced tooltips
-- **🔧 Multiple Fallbacks**: Network request hooking and GraphQL query interception
-- **🎨 Better UI**: Animated status indicator with rich hover information
-- **🐛 Improved Debugging**: Console API and comprehensive error reporting
+### v2.0.0 – Simplified (Original)
+- Initial webpack-based age bypass
+- UI indicator and basic state interception
 
-### v1.2 - Enhanced Edition  
-- Configuration system and state management
-- Multiple patching strategies and UI improvements
-- Privacy warning removal and SPA navigation handling
+### v1.3.0 – Webpack Edition
+- Modern architecture using webpack chunk interception
+- Advanced detection, debug API, and animated status indicator
+- Multiple fallbacks and enhanced diagnostics
 
-### v1.1 - Reliability Update
-- Added fallback methods and enhanced error handling
-- Multiple patch targets for better coverage
+*(Earlier versions unchanged)*
 
-### v1.0 - Original
-- Basic age bypass functionality with simple status indicator
+---
+
+## ⭐ Support & Etiquette
+If you encounter issues with the **original project**, please report them upstream:  
+🔗 https://github.com/Saganaki22/AgebypassX/issues
+
+For fork-specific behavior, maintain notes locally or in your fork’s issue tracker.
