@@ -2,10 +2,18 @@
 // @name         AgebypassX – Webpack Edition
 // @namespace    https://github.com/Saganaki22/AgebypassX
 // @version      2.1.1
+// @description  Modern age bypass for X.com using stable webpack chunk gating
+// @author       Saganaki22
+// @license      MIT
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @run-at       document-start
 // @grant        none
+// @homepageURL  https://github.com/Saganaki22/AgebypassX
+// @supportURL   https://github.com/Saganaki22/AgebypassX/issues
+// @updateURL    https://greasyfork.org/scripts/547244-agebypassx-tampermonkey-edition/code/AgebypassX.user.js
+// @downloadURL  https://greasyfork.org/scripts/547244-agebypassx-tampermonkey-edition/code/AgebypassX.user.js
+// @connect      none
 // @noframes
 // ==/UserScript==
 
