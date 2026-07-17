@@ -1,7 +1,3 @@
-Since the implementation has changed quite a bit (you now wrap the original accessor instead of replacing it, and patch all known flag locations), I'd update the README like this:
-
----
-
 # 🛡️ AgebypassX – v3.1.0
 
 Bypass **Twitter/X**'s age restrictions and unlock **sensitive media** — all **without compromising your privacy**.
