@@ -20,7 +20,7 @@
 (function () {
     'use strict';
 
-    const DEBUG = true;
+    const DEBUG = false;
     const log = (...args) => DEBUG && console.log('[AgebypassX]', ...args);
     const warn = (...args) => DEBUG && console.warn('[AgebypassX]', ...args);
     const error = (...args) => console.error('[AgebypassX]', ...args);
@@ -76,7 +76,7 @@
             _originalSet = descriptor.set;
             try {
                 _state = _originalGet.call(window);
-            } catch (e) { /* ignorar error de lectura inicial */ }
+            } catch (e) {}
         } else if ('value' in descriptor) {
             _state = descriptor.value;
         }
