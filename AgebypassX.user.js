@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AgebypassX
 // @namespace    https://github.com/Saganaki22/AgebypassX
-// @version      3.2.0
+// @version      3.2.1
 // @description  Age bypass for X.com
 // @author       Saganaki22
 // @license      MIT
@@ -20,31 +20,27 @@
 (function () {
     'use strict';
 
-    console.log('[AgebypassX] Script started');
+    const DEBUG = true;
+    const log = (...args) => DEBUG && console.log('[AgebypassX]', ...args);
+    const warn = (...args) => DEBUG && console.warn('[AgebypassX]', ...args);
+    const error = (...args) => console.error('[AgebypassX]', ...args);
+
+    log('Script started');
+
+    const FLAG_KEY = 'rweb_age_assurance_flow_enabled';
 
     /**
      * Sets a feature flag to false regardless of its storage format.
      * Supports both boolean values and objects with a `value` property.
      */
     function setFlag(container, key) {
-        if (!container) {
-            return;
-        }
-
-        if (!(key in container)) {
-            container[key] = false;
-            return;
-        }
+        if (!container) return;
 
         const flag = container[key];
 
-        if (
-            flag &&
-            typeof flag === 'object' &&
-            'value' in flag
-        ) {
-            flag.value = false;
-        } else {
+        if (flag && typeof flag === 'object' && 'value' in flag) {
+            if (flag.value !== false) flag.value = false;
+        } else if (flag !== false) {
             container[key] = false;
         }
     }
@@ -54,81 +50,64 @@
      */
     function patchState(state) {
         if (!state?.featureSwitch) {
-            console.warn('[AgebypassX] featureSwitch not found');
+            warn('featureSwitch not found in state');
             return;
         }
 
         const fs = state.featureSwitch;
-
-        // Ensure the overrides container exists.
         fs.customOverrides ??= {};
 
-        setFlag(fs.customOverrides, 'rweb_age_assurance_flow_enabled');
-        setFlag(fs.user, 'rweb_age_assurance_flow_enabled');
-        setFlag(fs.user?.config, 'rweb_age_assurance_flow_enabled');
-        setFlag(fs.defaultConfig, 'rweb_age_assurance_flow_enabled');
+        setFlag(fs.customOverrides, FLAG_KEY);
+        setFlag(fs.user, FLAG_KEY);
+        setFlag(fs.user?.config, FLAG_KEY);
+        setFlag(fs.defaultConfig, FLAG_KEY);
 
-        console.log('[AgebypassX] Feature flags patched');
+        log('Feature flags patched');
     }
 
-    const descriptor = Object.getOwnPropertyDescriptor(
-        window,
-        '__INITIAL_STATE__'
-    );
+    const descriptor = Object.getOwnPropertyDescriptor(window, '__INITIAL_STATE__');
 
-    console.log('[AgebypassX] Descriptor:', descriptor);
+    let _state;
+    let _originalGet, _originalSet;
 
-    // Preserve the original accessor if one already exists.
-    if (descriptor?.get && descriptor?.set) {
-        console.log('[AgebypassX] Wrapping existing accessor');
+    if (descriptor) {
+        if (descriptor.get && descriptor.set) {
+            _originalGet = descriptor.get;
+            _originalSet = descriptor.set;
+            try {
+                _state = _originalGet.call(window);
+            } catch (e) { /* ignorar error de lectura inicial */ }
+        } else if ('value' in descriptor) {
+            _state = descriptor.value;
+        }
+    }
 
+    if (_state) {
+        log('Patching existing state');
+        patchState(_state);
+    } else {
+        log('Waiting for first assignment');
+    }
+
+    try {
         Object.defineProperty(window, '__INITIAL_STATE__', {
-            configurable: descriptor.configurable,
-            enumerable: descriptor.enumerable,
-
+            configurable: true,
+            enumerable: true,
             get() {
-                return descriptor.get.call(this);
+                return _originalGet ? _originalGet.call(this) : _state;
             },
-
-            set(value) {
-                patchState(value);
-                return descriptor.set.call(this, value);
+            set(newValue) {
+                patchState(newValue);
+                if (_originalSet) {
+                    _originalSet.call(this, newValue);
+                } else {
+                    _state = newValue;
+                }
+                log('Initial state intercepted');
             }
         });
-
-        return;
+    } catch (e) {
+        error('Failed to intercept __INITIAL_STATE__. The site might have changed its structure.', e);
     }
-
-    // Reuse the existing state if present; otherwise wait for
-    // the first assignment performed by X.
-    let state =
-        descriptor && 'value' in descriptor
-            ? descriptor.value
-            : undefined;
-
-    if (state) {
-        console.log('[AgebypassX] Patching existing state');
-        patchState(state);
-    } else {
-        console.log('[AgebypassX] Waiting for first assignment');
-    }
-
-    Object.defineProperty(window, '__INITIAL_STATE__', {
-        configurable: true,
-        enumerable: true,
-
-        get() {
-            return state;
-        },
-
-        set(value) {
-            // Patch the incoming state before storing it.
-            patchState(value);
-
-            state = value;
-
-            console.log('[AgebypassX] Initial state intercepted');
-        }
-    });
 
 })();
