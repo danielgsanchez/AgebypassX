@@ -20,6 +20,18 @@ test('package.json version matches the userscript header', () => {
 
     assert.ok(match, 'missing @version in userscript header');
     assert.equal(match[1], PACKAGE.version);
+
+    const constant = SOURCE.match(/const VERSION = '([^']+)';/);
+    assert.ok(constant, 'missing VERSION constant');
+    assert.equal(constant[1], PACKAGE.version);
+});
+
+test('prints one startup line and no errors on a clean load', () => {
+    const page = load();
+
+    assert.deepEqual(page.logs, [
+        ['info', '[AgebypassX] v' + PACKAGE.version + ' ready']
+    ]);
 });
 
 // Minimal page realm: enough for the userscript to install its hooks
@@ -36,7 +48,14 @@ function createPage() {
         Reflect,
         Node: class Node {},
         document: {},
-        console: { log() {}, warn() {}, error() {} }
+        logs: []
+    };
+
+    page.console = {
+        log: (...args) => page.logs.push(['log', ...args]),
+        info: (...args) => page.logs.push(['info', ...args]),
+        warn: (...args) => page.logs.push(['warn', ...args]),
+        error: (...args) => page.logs.push(['error', ...args])
     };
 
     page.Response.prototype.json = function () {

@@ -1,6 +1,8 @@
-# 🛡️ AgebypassX – v3.3.0
+# 🛡️ AgebypassX – v3.3.1
 
 Bypass **Twitter/X**'s client-side age restrictions and unlock **sensitive media** without sending anything to a third party.
+
+> v3.3.1 is a patch on v3.3.0: it always prints one short startup line so you can confirm the script loaded. Verbose hook logging remains behind `DEBUG`.
 
 > v3.3.0 fixes the intermittent case where age-restricted media stayed blurred until you pressed F5. The blur can arrive inside the timeline/direct-post API payload itself, _after_ `__INITIAL_STATE__` has already been patched, so the old version was racing the network.
 
@@ -24,7 +26,7 @@ v3.3.0 adds:
 * **`JSON.parse`, `Response.json` and `Object.assign` hooks**, so timeline pages, direct posts and WebSocket updates are covered.
 * **`unsafeWindow` support**, so the hooks target the page realm even when the userscript manager runs the script in a sandbox.
 * **Targeted walkers**: flags, birthdate and media are only inspected when the object's own keys say they are relevant, with hard scan limits.
-* **10 dependency-free tests** and a version-sync check.
+* **12 dependency-free tests** and a version-sync check.
 
 ---
 
@@ -81,7 +83,15 @@ https://raw.githubusercontent.com/danielgsanchez/AgebypassX/main/AgebypassX.user
 
 ## 🛠️ Debugging
 
-Set `const DEBUG = false;` to `true` at the top of the userscript and reload. Console messages are prefixed with `[AgebypassX]`:
+Set `const DEBUG = false;` to `true` at the top of the userscript and reload. Console messages are prefixed with `[AgebypassX]`.
+
+By default the script always prints one line on load:
+
+```text
+[AgebypassX] v3.3.1 ready
+```
+
+With `DEBUG = true` you also get the hook details:
 
 ```text
 [AgebypassX] Script started
@@ -101,7 +111,7 @@ No dependencies are required:
 
 ```bash
 npm run check   # syntax check
-npm test        # 10 tests + version sync
+npm test        # 12 tests + version sync
 ```
 
 The suite covers flags, birthdate spoofing, per-media warnings, post-level wrappers, unavailable media, non-X origins, `Response.json`, and TanStack hydration (initial, streamed, malformed, frozen and missing-media cases).

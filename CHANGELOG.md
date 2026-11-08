@@ -2,11 +2,12 @@
 
 All notable changes to this fork are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.3.1] – 2026-11-08
 
 ### Changed
 
-- CI now uses `actions/checkout@v7` and `actions/setup-node@v7` (Node 24 action runtime), removing the Node 20 deprecation warnings.
+- Always print one startup line (`[AgebypassX] v3.3.1 ready`); verbose hook logs stay behind `DEBUG`.
+- CI uses `actions/checkout@v7` and `actions/setup-node@v7` (Node 24 action runtime), removing the Node 20 deprecation warnings.
 - Test matrix is Node.js 22 and 24; the minimum supported test runtime is Node.js 22.
 
 ## [3.3.0] – 2026-11-08

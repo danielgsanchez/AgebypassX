@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AgebypassX
 // @namespace    https://github.com/Saganaki22/AgebypassX
-// @version      3.3.0
+// @version      3.3.1
 // @description  Age bypass and sensitive-media unlock for X.com
 // @author       Saganaki22
 // @license      MIT
@@ -21,6 +21,7 @@
     'use strict';
 
     const DEBUG = false;
+    const VERSION = '3.3.1';
     const log = (...args) => DEBUG && console.log('[AgebypassX]', ...args);
     const warn = (...args) => DEBUG && console.warn('[AgebypassX]', ...args);
     const error = (...args) => console.error('[AgebypassX]', ...args);
@@ -686,5 +687,8 @@
         }
     })();
 
+    // One line is always printed so users can confirm the script loaded.
+    // Everything else stays behind DEBUG.
+    console.info('[AgebypassX] v' + VERSION + ' ready');
     log('Ready');
 })();
