@@ -1,0 +1,14 @@
+{
+  "name": "agebypassx",
+  "version": "3.3.0",
+  "private": true,
+  "description": "Age and sensitive-media bypass userscript for X/Twitter",
+  "license": "MIT",
+  "scripts": {
+    "check": "node --check AgebypassX.user.js",
+    "test": "node --test tests/smoke.cjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
