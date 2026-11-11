@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AgebypassX
 // @namespace    https://github.com/Saganaki22/AgebypassX
-// @version      3.3.2
+// @version      3.3.3
 // @description  Age bypass and sensitive-media unlock for X.com
 // @author       Saganaki22
 // @license      MIT
@@ -21,7 +21,7 @@
     'use strict';
 
     const DEBUG = false;
-    const VERSION = '3.3.2';
+    const VERSION = '3.3.3';
     const log = (...args) => DEBUG && console.log('[AgebypassX]', ...args);
     const warn = (...args) => DEBUG && console.warn('[AgebypassX]', ...args);
     const error = (...args) => console.error('[AgebypassX]', ...args);
@@ -525,28 +525,55 @@
         }
     }
 
-    // Summarises a profile media timeline so the console shows whether X sent
-    // pictures or filtered them before the browser ever saw them.
-    function collectTimelineMedia(data) {
-        const result = data && data.data && data.data.user && data.data.user.result;
-        if (!result || typeof result !== 'object') return null;
+    // Profile media timelines reach the page in several shapes: the plain
+    // GraphQL envelope, dehydrated state, Seroval hydration tables and RSC
+    // chunks that nest the same payload inside arrays. Walk the object instead
+    // of trusting one path, otherwise a nested timeline looks like "no data".
+    const TIMELINE_MAX_DEPTH = 12;
+    const TIMELINE_MAX_NODES = 50000;
 
-        const timeline = result.timeline_v2 || result.timeline;
-        const instructions = timeline && timeline.timeline && timeline.timeline.instructions;
-        if (!Array.isArray(instructions)) return null;
+    function findTimelines(root) {
+        const found = [];
+        const seen = new Set();
+        let nodes = 0;
 
-        let entries = 0;
-        let tweets = 0;
-        const media = [];
+        (function walk(node, depth) {
+            if (!node || typeof node !== 'object') return;
+            if (depth > TIMELINE_MAX_DEPTH || nodes > TIMELINE_MAX_NODES) return;
+            if (seen.has(node)) return;
+
+            seen.add(node);
+            nodes++;
+
+            if (Array.isArray(node.instructions)) {
+                // `timeline.instructions` is the only list we care about.
+                found.push(node.instructions);
+                return;
+            }
+
+            if (Array.isArray(node)) {
+                for (let i = 0; i < node.length; i++) walk(node[i], depth + 1);
+                return;
+            }
+
+            const keys = Object.keys(node);
+            for (let i = 0; i < keys.length; i++) walk(node[keys[i]], depth + 1);
+        })(root, 0);
+
+        return found;
+    }
+
+    function timelineItems(instructions) {
+        const items = [];
 
         for (let i = 0; i < instructions.length; i++) {
             const instruction = instructions[i];
             if (!instruction || typeof instruction !== 'object') continue;
 
-            const items = [];
             if (Array.isArray(instruction.entries)) {
                 for (let j = 0; j < instruction.entries.length; j++) items.push(instruction.entries[j]);
             }
+
             if (Array.isArray(instruction.moduleItems)) {
                 for (let j = 0; j < instruction.moduleItems.length; j++) {
                     const module = instruction.moduleItems[j];
@@ -554,14 +581,53 @@
                     for (let k = 0; k < module.items.length; k++) items.push(module.items[k]);
                 }
             }
+        }
 
+        return items;
+    }
+
+    // Entries can carry the tweet directly (`content.itemContent`) or wrapped
+    // by a module item (`item.itemContent` / `item.item.itemContent`).
+    function tweetOf(item) {
+        if (!item || typeof item !== 'object') return null;
+
+        const candidates = [
+            item.content && item.content.itemContent,
+            item.itemContent,
+            item.item && item.item.itemContent
+        ];
+
+        for (let i = 0; i < candidates.length; i++) {
+            const content = candidates[i];
+            const tweet = content && content.tweet_results && content.tweet_results.result;
+            if (tweet && typeof tweet === 'object') return tweet;
+        }
+
+        return null;
+    }
+
+    // Summarises a profile media timeline so the console shows whether X sent
+    // pictures or filtered them before the browser ever saw them.
+    function collectTimelineMedia(data) {
+        const timelines = findTimelines(data);
+        if (!timelines.length) return null;
+
+        let entries = 0;
+        let tweets = 0;
+        const media = [];
+        const seenTimelines = new Set();
+
+        for (let t = 0; t < timelines.length; t++) {
+            const instructions = timelines[t];
+            if (seenTimelines.has(instructions)) continue;
+            seenTimelines.add(instructions);
+
+            const items = timelineItems(instructions);
             entries += items.length;
 
             for (let j = 0; j < items.length; j++) {
-                const item = items[j];
-                const itemContent = item && item.content && item.content.itemContent;
-                const tweet = itemContent && itemContent.tweet_results && itemContent.tweet_results.result;
-                if (!tweet || typeof tweet !== 'object') continue;
+                const tweet = tweetOf(items[j]);
+                if (!tweet) continue;
 
                 tweets++;
                 const inner = tweet.tweet || tweet;
@@ -584,7 +650,7 @@
 
             const info = collectTimelineMedia(data);
             if (!info) {
-                log('Media response without a user timeline:', source);
+                log('Media payload without a timeline:', source);
                 return;
             }
 

@@ -1,8 +1,8 @@
-# 🛡️ AgebypassX – v3.3.2
+# 🛡️ AgebypassX – v3.3.3
 
 Bypass **Twitter/X**'s client-side age restrictions and unlock **sensitive media** without sending anything to a third party.
 
-> v3.3.2 adds a diagnostic line for profile media tabs: `[AgebypassX] UserMedia: N entries, N tweets, N media`. It tells you whether X sent the photos or filtered them server-side. It also always prints one short startup line, so you can confirm the script loaded; verbose hook logging remains behind `DEBUG`.
+> v3.3.3 makes the profile-media diagnostic shape-agnostic: it walks the whole payload, so timelines nested inside hydration/RSC data are counted too. It also stops reporting unrelated hydration chunks as media responses. v3.3.2 added the `[AgebypassX] UserMedia: N entries, N tweets, N media` line, which tells you whether X sent the photos or filtered them server-side.
 
 > v3.3.0 fixes the intermittent case where age-restricted media stayed blurred until you pressed F5. The blur can arrive inside the timeline/direct-post API payload itself, _after_ `__INITIAL_STATE__` has already been patched, so the old version was racing the network.
 
@@ -26,7 +26,7 @@ v3.3.0 adds:
 * **`JSON.parse`, `Response.json` and `Object.assign` hooks**, so timeline pages, direct posts and WebSocket updates are covered.
 * **`unsafeWindow` support**, so the hooks target the page realm even when the userscript manager runs the script in a sandbox.
 * **Targeted walkers**: flags, birthdate and media are only inspected when the object's own keys say they are relevant, with hard scan limits.
-* **14 dependency-free tests** and a version-sync check.
+* **16 dependency-free tests** and a version-sync check.
 
 ---
 
@@ -88,7 +88,7 @@ Set `const DEBUG = false;` to `true` at the top of the userscript and reload. Co
 By default the script always prints one line on load:
 
 ```text
-[AgebypassX] v3.3.2 ready
+[AgebypassX] v3.3.3 ready
 ```
 
 With `DEBUG = true` you also get the hook details:
@@ -105,12 +105,14 @@ A missing `State hook ready` means X exposed `__INITIAL_STATE__` in a way the sc
 
 ### Profile media tab
 
-On `https://x.com/<user>/media`, the script always prints one summary line when the media timeline arrives:
+On `https://x.com/<user>/media`, the script prints one summary line when a media timeline arrives, whichever hook saw it first (`UserMedia` for the GraphQL call, `hydration` for the page's embedded data):
 
 ```text
 [AgebypassX] UserMedia: 0 entries, 0 tweets, 0 media
-[AgebypassX] UserMedia: 20 entries, 20 tweets, 30 media
+[AgebypassX] hydration: 20 entries, 20 tweets, 30 media
 ```
+
+The summary walks the entire payload, so timelines nested inside dehydrated state or RSC chunks are counted. Payloads that contain no timeline at all are ignored (with `DEBUG` they show up as `Media payload without a timeline`).
 
 * `0 entries` means X returned an empty media timeline. The photos are being filtered **before they reach the browser**, so no userscript can restore them.
 * A non-zero count means the photos did arrive, and the script already removed their warnings. If the grid still looks wrong, enable `DEBUG` and check the `Media flags` line.
@@ -125,10 +127,10 @@ No dependencies are required:
 
 ```bash
 npm run check   # syntax check
-npm test        # 14 tests + version sync
+npm test        # 16 tests + version sync
 ```
 
-The suite covers flags, birthdate spoofing, per-media warnings, post-level wrappers, unavailable media, non-X origins, `Response.json`, profile media diagnostics, and TanStack hydration (initial, streamed, malformed, frozen and missing-media cases).
+The suite covers flags, birthdate spoofing, per-media warnings, post-level wrappers, unavailable media, non-X origins, `Response.json`, profile media diagnostics (plain, empty, nested hydration and unrelated payloads), and TanStack hydration (initial, streamed, malformed, frozen and missing-media cases).
 
 ---
 

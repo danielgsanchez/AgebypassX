@@ -463,3 +463,66 @@ test('reports the media count that X actually sent', async () => {
         'expected the UserMedia summary with one item'
     );
 });
+
+test('reports a media timeline nested in hydrated state', () => {
+    const page = load();
+    page.location = { pathname: '/example_user/media' };
+
+    const payload = {
+        state: {
+            queries: [{
+                state: {
+                    data: {
+                        user: {
+                            result: {
+                                __typename: 'User',
+                                timeline: {
+                                    timeline: {
+                                        instructions: [{
+                                            moduleItems: [{
+                                                items: [{
+                                                    item: {
+                                                        itemContent: {
+                                                            tweet_results: {
+                                                                result: {
+                                                                    media_entities2: [photo()]
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }]
+                                            }]
+                                        }]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }]
+        }
+    };
+
+    page.JSON.parse(JSON.stringify(payload));
+
+    assert.ok(
+        page.logs.some(entry =>
+            entry[0] === 'info' &&
+            entry[1] === '[AgebypassX] hydration: 1 entries, 1 tweets, 1 media'
+        ),
+        'expected the nested timeline to be summarised'
+    );
+});
+
+test('ignores hydrated chunks that carry no timeline', () => {
+    const page = load();
+    page.location = { pathname: '/example_user/media' };
+
+    page.JSON.parse(JSON.stringify({
+        data: { viewer: { instructions: 'not-a-timeline' } }
+    }));
+
+    assert.deepEqual(page.logs, [
+        ['info', '[AgebypassX] v' + PACKAGE.version + ' ready']
+    ]);
+});

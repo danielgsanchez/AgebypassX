@@ -2,6 +2,14 @@
 
 All notable changes to this fork are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [3.3.3] – 2026-11-11
+
+### Fixed
+
+- The profile-media diagnostic now walks the whole payload instead of trusting `data.user.result`. Timelines nested in dehydrated state, Seroval hydration tables or RSC arrays are found, so `hydration: N entries` reflects the real content.
+- Entries wrapped by module items (`item.itemContent`, `item.item.itemContent`) are read as tweets too.
+- Hydration chunks on `/media` pages that carry no timeline are no longer reported as media responses; with `DEBUG` they log `Media payload without a timeline`.
+
 ## [3.3.2] – 2026-11-11
 
 ### Added
