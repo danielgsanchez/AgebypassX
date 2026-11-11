@@ -2,6 +2,18 @@
 
 All notable changes to this fork are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [3.3.6] – 2026-11-11
+
+### Fixed
+
+- The empty-media panel now appears when the media tab is reached through in-app navigation, not only on a direct load. X prefetches `UserMedia` before the route changes, so the empty result was discarded (`isMediaPage()` was still false) and the cached response never triggered again.
+- The panel state is per profile instead of two global flags: it reappears every time you open a profile's empty media tab, and different profiles no longer share a single "already shown" flag.
+- The empty mark is dropped when a timeline with media arrives later, and the panel is removed when you leave the tab.
+
+### Tests
+
+- Added cases for prefetch-before-navigation, stale-mark clearing and a second profile in the same session.
+
 ## [3.3.5] – 2026-11-11
 
 ### Changed

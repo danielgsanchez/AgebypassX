@@ -102,7 +102,7 @@ When the grid is empty, the script adds a panel at the top of the tab:
 * **See all photos** — opens `https://x.com/search?q=from:<user> filter:media&f=image`.
 * **Open the timeline** — opens the profile.
 
-The search endpoint is not filtered the same way as the grid, so it usually reaches the photos the grid hides. The panel appears only on `/user/media` pages whose timeline came back empty, once per load, and its text is English.
+The search endpoint is not filtered the same way as the grid, so it usually reaches the photos the grid hides. The panel appears every time you open a profile's media tab whose timeline came back empty, including when you get there from the profile, and it is removed when you leave the tab. Its text is English.
 
 If the search is empty too, check the search settings (three-dot menu → **Search settings**) and disable **Hide sensitive content**.
 
@@ -140,10 +140,10 @@ No dependencies are required:
 
 ```bash
 npm run check   # syntax check
-npm test        # 18 tests + version sync
+npm test        # 21 tests + version sync
 ```
 
-The suite covers flags, birthdate spoofing, per-media warnings, post-level wrappers, unavailable media, non-X origins, `Response.json`, profile media diagnostics (plain, empty, nested hydration, unrelated payloads and the search fallback), and TanStack hydration (initial, streamed, malformed, frozen and missing-media cases).
+The suite covers flags, birthdate spoofing, per-media warnings, post-level wrappers, unavailable media, non-X origins, `Response.json`, profile media diagnostics (plain, empty, nested hydration, unrelated payloads, prefetch-before-navigation and the search fallback), and TanStack hydration (initial, streamed, malformed, frozen and missing-media cases).
 
 CI runs the same suite on Node.js 22 and 24; 22 is the minimum supported runtime.
 

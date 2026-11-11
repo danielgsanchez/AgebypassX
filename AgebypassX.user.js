@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AgebypassX
 // @namespace    https://github.com/Saganaki22/AgebypassX
-// @version      3.3.5
+// @version      3.3.6
 // @description  Age bypass and sensitive-media unlock for X.com
 // @author       Saganaki22
 // @license      MIT
@@ -21,7 +21,7 @@
     'use strict';
 
     const DEBUG = false;
-    const VERSION = '3.3.5';
+    const VERSION = '3.3.6';
     const log = (...args) => DEBUG && console.log('[AgebypassX]', ...args);
     const warn = (...args) => DEBUG && console.warn('[AgebypassX]', ...args);
     const error = (...args) => console.error('[AgebypassX]', ...args);
@@ -532,10 +532,11 @@
     const TIMELINE_MAX_DEPTH = 12;
     const TIMELINE_MAX_NODES = 50000;
 
-    function findTimelines(root) {
-        const found = [];
+    function scanMediaPayload(root) {
+        const timelines = [];
         const seen = new Set();
         let nodes = 0;
+        let screenName = null;
 
         (function walk(node, depth) {
             if (!node || typeof node !== 'object') return;
@@ -545,9 +546,17 @@
             seen.add(node);
             nodes++;
 
+            // The payload also carries the profile, even when the timeline is
+            // empty. Remember it so the fallback can be attached to the right
+            // user later, after an in-app navigation.
+            if (!screenName && node.legacy && typeof node.legacy.screen_name === 'string' &&
+                (node.__typename === 'User' || node.rest_id)) {
+                screenName = node.legacy.screen_name;
+            }
+
             if (Array.isArray(node.instructions)) {
                 // `timeline.instructions` is the only list we care about.
-                found.push(node.instructions);
+                timelines.push(node.instructions);
                 return;
             }
 
@@ -560,7 +569,7 @@
             for (let i = 0; i < keys.length; i++) walk(node[keys[i]], depth + 1);
         })(root, 0);
 
-        return found;
+        return { timelines, screenName };
     }
 
     function timelineItems(instructions) {
@@ -609,7 +618,8 @@
     // Summarises a profile media timeline so the console shows whether X sent
     // pictures or filtered them before the browser ever saw them.
     function collectTimelineMedia(data) {
-        const timelines = findTimelines(data);
+        const scanned = scanMediaPayload(data);
+        const timelines = scanned.timelines;
         if (!timelines.length) return null;
 
         let entries = 0;
@@ -639,7 +649,7 @@
             }
         }
 
-        return { entries, tweets, media };
+        return { entries, tweets, media, screenName: scanned.screenName };
     }
 
     function reportMediaResponse(source, data) {
@@ -670,8 +680,14 @@
                 })));
             }
 
-            if (info.media.length === 0 && isMediaPage()) {
-                noteEmptyMediaTab();
+            if (info.media.length === 0) {
+                // The response may arrive before the route changes (X
+                // prefetches the media tab), so remember the user regardless of
+                // the current URL; the route watcher shows the panel on arrival.
+                if (info.screenName) rememberEmptyMedia(info.screenName);
+                if (isMediaPage()) noteEmptyMediaTab(info.screenName || screenNameFromPath());
+            } else if (info.screenName) {
+                forgetEmptyMedia(info.screenName);
             }
         } catch (e) {
             warn('Media report failed', e);
@@ -685,8 +701,51 @@
     // -----------------------------------------------------------------------
     const FALLBACK_ATTEMPTS = 40;
     const FALLBACK_INTERVAL = 500;
-    let fallbackNoted = false;
-    let fallbackInserted = false;
+    const EMPTY_MEDIA_TTL = 10 * 60 * 1000;
+
+    // Per-profile state, so navigating between media tabs in the same session
+    // keeps working instead of stopping after the first panel.
+    const emptyMedia = new Map();
+    const notedUsers = new Set();
+    let currentPanel = null;
+    let currentPanelUser = null;
+
+    function rememberEmptyMedia(screenName) {
+        try {
+            emptyMedia.set(String(screenName).toLowerCase(), Date.now());
+        } catch (e) {}
+    }
+
+    function isEmptyMedia(screenName) {
+        try {
+            const at = emptyMedia.get(String(screenName).toLowerCase());
+            return typeof at === 'number' && Date.now() - at < EMPTY_MEDIA_TTL;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function forgetEmptyMedia(screenName) {
+        try {
+            const key = String(screenName).toLowerCase();
+            emptyMedia.delete(key);
+
+            if (currentPanelUser && currentPanelUser.toLowerCase() === key) {
+                removeFallbackPanel();
+            }
+        } catch (e) {}
+    }
+
+    function removeFallbackPanel() {
+        try {
+            if (currentPanel && currentPanel.parentNode) {
+                currentPanel.parentNode.removeChild(currentPanel);
+            }
+        } catch (e) {}
+
+        currentPanel = null;
+        currentPanelUser = null;
+    }
 
     function screenNameFromPath() {
         try {
@@ -766,15 +825,22 @@
     }
 
     function showFallbackPanel(screenName, searchUrl) {
-        if (fallbackInserted || !doc || typeof doc.createElement !== 'function') return;
+        if (!doc || typeof doc.createElement !== 'function') return;
+        if (screenNameFromPath() !== screenName) return;
+        if (currentPanelUser === screenName && currentPanel && currentPanel.parentNode) return;
 
+        removeFallbackPanel();
+
+        const panel = buildFallbackPanel(screenName, searchUrl);
         let attempts = 0;
 
         (function tryInsert() {
-            if (fallbackInserted) return;
+            if (currentPanel) return;
+            if (screenNameFromPath() !== screenName) return;
 
-            if (insertFallbackPanel(buildFallbackPanel(screenName, searchUrl))) {
-                fallbackInserted = true;
+            if (insertFallbackPanel(panel)) {
+                currentPanel = panel;
+                currentPanelUser = screenName;
                 return;
             }
 
@@ -788,20 +854,83 @@
         })();
     }
 
-    function noteEmptyMediaTab() {
-        if (fallbackNoted) return;
+    function noteEmptyMediaTab(screenName) {
+        const name = screenName || screenNameFromPath();
+        if (!name) return;
 
-        const screenName = screenNameFromPath();
-        if (!screenName) return;
+        if (!notedUsers.has(name.toLowerCase())) {
+            notedUsers.add(name.toLowerCase());
 
-        fallbackNoted = true;
-        const url = searchMediaUrl(screenName);
+            // Always visible: this is the way out when X returns an empty grid.
+            console.info('[AgebypassX] Media tab empty; photos available via search: ' +
+                searchMediaUrl(name));
+        }
 
-        // Always visible: this is the way out when X returns an empty grid.
-        console.info('[AgebypassX] Media tab empty; photos available via search: ' + url);
-
-        showFallbackPanel(screenName, url);
+        showFallbackPanel(name, searchMediaUrl(name));
     }
+
+    // Re-evaluates the current URL. Called on history changes, on popstate and
+    // by a slow interval, so both direct loads and in-app navigation work.
+    function checkMediaRoute() {
+        try {
+            const name = screenNameFromPath();
+
+            if (!name || !isEmptyMedia(name)) {
+                removeFallbackPanel();
+                return;
+            }
+
+            noteEmptyMediaTab(name);
+        } catch (e) {
+            warn('Media route check failed', e);
+        }
+    }
+
+    (function hookMediaRoute() {
+        try {
+            const history = win.history;
+
+            if (history) {
+                const methods = ['pushState', 'replaceState'];
+
+                for (let i = 0; i < methods.length; i++) {
+                    const method = methods[i];
+                    const native = history[method];
+                    if (typeof native !== 'function') continue;
+
+                    const wrapped = function () {
+                        const result = native.apply(this, arguments);
+                        checkMediaRoute();
+                        return result;
+                    };
+
+                    spoofAs(native, wrapped, method);
+
+                    try {
+                        history[method] = wrapped;
+                    } catch (e) {
+                        warn('Could not wrap history.' + method, e);
+                    }
+                }
+            }
+
+            if (typeof win.addEventListener === 'function') {
+                win.addEventListener('popstate', checkMediaRoute);
+            }
+        } catch (e) {
+            warn('Could not hook history', e);
+        }
+
+        if (typeof win.setInterval === 'function') {
+            try {
+                win.setInterval(checkMediaRoute, 500);
+            } catch (e) {
+                warn('Could not start the media route watcher', e);
+            }
+        }
+
+        checkMediaRoute();
+    })();
 
     (function hookResponseJson() {
         try {

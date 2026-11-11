@@ -48,7 +48,13 @@ function createPage() {
         Reflect,
         Node: class Node {},
         document: {},
-        logs: []
+        logs: [],
+        intervals: []
+    };
+
+    page.setInterval = fn => {
+        page.intervals.push(fn);
+        return page.intervals.length;
     };
 
     page.console = {
@@ -123,6 +129,20 @@ function withWarning(media, extra = {}) {
             other: 7
         },
         ...extra
+    };
+}
+
+function emptyMediaData(screenName) {
+    return {
+        data: {
+            user: {
+                result: {
+                    __typename: 'User',
+                    legacy: { screen_name: screenName },
+                    timeline_v2: { timeline: { instructions: [] } }
+                }
+            }
+        }
     };
 }
 
@@ -595,5 +615,104 @@ test('does not offer the fallback when the grid has media', async () => {
     assert.ok(
         !page.logs.some(entry => String(entry[1]).includes('Media tab empty')),
         'unexpected fallback for a populated grid'
+    );
+});
+
+test('keeps the fallback when the media payload arrives before the route changes', async () => {
+    const page = load();
+    page.location = { pathname: '/example_user', origin: 'https://x.com' };
+
+    await new page.Response(
+        emptyMediaData('example_user'),
+        'https://api.x.com/i/api/graphql/example/UserMedia'
+    ).json();
+
+    assert.ok(
+        !page.logs.some(entry => String(entry[1]).includes('Media tab empty')),
+        'the panel must wait until the media tab is open'
+    );
+
+    page.location.pathname = '/example_user/media';
+    page.intervals.forEach(check => check());
+
+    assert.ok(
+        page.logs.some(entry =>
+            entry[0] === 'info' &&
+            entry[1] === '[AgebypassX] Media tab empty; photos available via search: ' +
+                'https://x.com/search?q=from%3Aexample_user%20filter%3Amedia&f=image'
+        ),
+        'expected the panel after the in-app navigation'
+    );
+});
+
+test('drops the empty mark when the timeline later has media', async () => {
+    const page = load();
+    page.location = { pathname: '/example_user', origin: 'https://x.com' };
+
+    await new page.Response(
+        emptyMediaData('example_user'),
+        'https://api.x.com/i/api/graphql/example/UserMedia'
+    ).json();
+
+    await new page.Response({
+        data: {
+            user: {
+                result: {
+                    __typename: 'User',
+                    legacy: { screen_name: 'example_user' },
+                    timeline_v2: {
+                        timeline: {
+                            instructions: [{
+                                entries: [{
+                                    content: {
+                                        itemContent: {
+                                            tweet_results: {
+                                                result: { media_entities2: [photo()] }
+                                            }
+                                        }
+                                    }
+                                }]
+                            }]
+                        }
+                    }
+                }
+            }
+        }
+    }, 'https://api.x.com/i/api/graphql/example/UserMedia').json();
+
+    page.location.pathname = '/example_user/media';
+    page.intervals.forEach(check => check());
+
+    assert.ok(
+        !page.logs.some(entry => String(entry[1]).includes('Media tab empty')),
+        'the stale empty mark should be gone'
+    );
+});
+
+test('shows the fallback for a second profile in the same session', async () => {
+    const page = load();
+    page.location = { pathname: '/example_user/media', origin: 'https://x.com' };
+
+    await new page.Response(
+        emptyMediaData('example_user'),
+        'https://api.x.com/i/api/graphql/example/UserMedia'
+    ).json();
+
+    assert.ok(
+        page.logs.some(entry => String(entry[1]).includes('from%3Aexample_user')),
+        'expected the first profile to be remembered'
+    );
+
+    page.location.pathname = '/other_user/media';
+    page.intervals.forEach(check => check());
+
+    await new page.Response(
+        emptyMediaData('other_user'),
+        'https://api.x.com/i/api/graphql/example/UserMedia'
+    ).json();
+
+    assert.ok(
+        page.logs.some(entry => String(entry[1]).includes('from%3Aother_user')),
+        'expected the second profile to get its own fallback'
     );
 });
