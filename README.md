@@ -176,5 +176,5 @@ Release history lives in [`CHANGELOG.md`](./CHANGELOG.md).
 ## 🙏 Credits
 
 * [Saganaki22/AgebypassX](https://github.com/Saganaki22/AgebypassX) — original userscript and feature-flag research.
-* [Ivannivi](https://github.com/Ivannivi) — media-warning and TanStack hydration fix in PR #22.
+* [Ivannivi](https://github.com/Ivannivi) — media-warning and TanStack hydration fix in [PR #22](https://github.com/Saganaki22/AgebypassX/pull/22).
 * MIT licensed.
