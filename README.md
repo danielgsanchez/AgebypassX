@@ -1,8 +1,8 @@
-# 🛡️ AgebypassX – v3.3.3
+# 🛡️ AgebypassX – v3.3.4
 
 Bypass **Twitter/X**'s client-side age restrictions and unlock **sensitive media** without sending anything to a third party.
 
-> v3.3.3 makes the profile-media diagnostic shape-agnostic: it walks the whole payload, so timelines nested inside hydration/RSC data are counted too. It also stops reporting unrelated hydration chunks as media responses. v3.3.2 added the `[AgebypassX] UserMedia: N entries, N tweets, N media` line, which tells you whether X sent the photos or filtered them server-side.
+> v3.3.4 adds a way out of the empty media tab: when X returns `0 media`, the tab shows a small panel with **Ver todas las fotos**, which opens the profile search (`from:user filter:media`) — the same photos, unfiltered. The diagnostic and the shape-agnostic timeline walk from 3.3.2/3.3.3 are still there.
 
 > v3.3.0 fixes the intermittent case where age-restricted media stayed blurred until you pressed F5. The blur can arrive inside the timeline/direct-post API payload itself, _after_ `__INITIAL_STATE__` has already been patched, so the old version was racing the network.
 
@@ -26,7 +26,7 @@ v3.3.0 adds:
 * **`JSON.parse`, `Response.json` and `Object.assign` hooks**, so timeline pages, direct posts and WebSocket updates are covered.
 * **`unsafeWindow` support**, so the hooks target the page realm even when the userscript manager runs the script in a sandbox.
 * **Targeted walkers**: flags, birthdate and media are only inspected when the object's own keys say they are relevant, with hard scan limits.
-* **16 dependency-free tests** and a version-sync check.
+* **18 dependency-free tests** and a version-sync check.
 
 ---
 
@@ -88,7 +88,7 @@ Set `const DEBUG = false;` to `true` at the top of the userscript and reload. Co
 By default the script always prints one line on load:
 
 ```text
-[AgebypassX] v3.3.3 ready
+[AgebypassX] v3.3.4 ready
 ```
 
 With `DEBUG = true` you also get the hook details:
@@ -117,7 +117,17 @@ The summary walks the entire payload, so timelines nested inside dehydrated stat
 * `0 entries` means X returned an empty media timeline. The photos are being filtered **before they reach the browser**, so no userscript can restore them.
 * A non-zero count means the photos did arrive, and the script already removed their warnings. If the grid still looks wrong, enable `DEBUG` and check the `Media flags` line.
 
-The profile timeline (`/user`) and the media tab (`/user/media`) use different endpoints. X can hide sensitive media from the media grid while still returning it, blurred, in the timeline. In that case use the timeline, or load the media tab through a region where X does not apply the filter.
+The profile timeline (`/user`) and the media tab (`/user/media`) use different endpoints. X can hide sensitive media from the media grid while still returning it, blurred, in the timeline.
+
+### Empty media grid: search fallback
+
+When X returns `0 media`, the script prints:
+
+```text
+[AgebypassX] Media tab empty; photos available via search: https://x.com/search?q=from%3A<user>%20filter%3Amedia&f=image
+```
+
+and adds a small panel at the top of the tab with **Ver todas las fotos** (that search) and **Abrir el timeline**. The search endpoint is not filtered the same way as the media grid, so the photos are usually all there — including the ones the grid hides. The panel appears only on `/user/media` pages whose media timeline came back empty, and only once per load.
 
 ---
 
@@ -127,10 +137,10 @@ No dependencies are required:
 
 ```bash
 npm run check   # syntax check
-npm test        # 16 tests + version sync
+npm test        # 18 tests + version sync
 ```
 
-The suite covers flags, birthdate spoofing, per-media warnings, post-level wrappers, unavailable media, non-X origins, `Response.json`, profile media diagnostics (plain, empty, nested hydration and unrelated payloads), and TanStack hydration (initial, streamed, malformed, frozen and missing-media cases).
+The suite covers flags, birthdate spoofing, per-media warnings, post-level wrappers, unavailable media, non-X origins, `Response.json`, profile media diagnostics (plain, empty, nested hydration, unrelated payloads and the search fallback), and TanStack hydration (initial, streamed, malformed, frozen and missing-media cases).
 
 ---
 
@@ -149,7 +159,7 @@ The suite covers flags, birthdate spoofing, per-media warnings, post-level wrapp
 ## ⚠️ Limitations
 
 * This only bypasses **client-side** gating. Server-side removals or legal blocks cannot be undone from the browser.
-* The profile media tab (`/user/media`) is filtered **server-side** for some accounts and regions: X can return an empty timeline even though the same photos are visible in the profile timeline. The `UserMedia: 0 entries` diagnostic line confirms it. A VPN or using the timeline works around it; the script cannot invent media X never sent.
+* The profile media tab (`/user/media`) is filtered **server-side** for some accounts and regions: X can return an empty timeline even though the same photos are visible in the profile timeline. The `UserMedia: 0 entries` diagnostic line confirms it. The panel's **Ver todas las fotos** search (`from:user filter:media`) usually reaches them; the script cannot invent media X never sent.
 * If X changes the flag names or the media payload structure, the script may silently do nothing. Enable `DEBUG` and check the console.
 * The script does not modify account settings, cookies or requests; it only edits the data X already sent to your browser.
 * `sensitive_media_settings_enabled` is intentionally set to `true`; the other flags are disabled.

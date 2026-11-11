@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AgebypassX
 // @namespace    https://github.com/Saganaki22/AgebypassX
-// @version      3.3.3
+// @version      3.3.4
 // @description  Age bypass and sensitive-media unlock for X.com
 // @author       Saganaki22
 // @license      MIT
@@ -21,7 +21,7 @@
     'use strict';
 
     const DEBUG = false;
-    const VERSION = '3.3.3';
+    const VERSION = '3.3.4';
     const log = (...args) => DEBUG && console.log('[AgebypassX]', ...args);
     const warn = (...args) => DEBUG && console.warn('[AgebypassX]', ...args);
     const error = (...args) => console.error('[AgebypassX]', ...args);
@@ -669,9 +669,138 @@
                     availability: m && m.ext_media_availability && m.ext_media_availability.status
                 })));
             }
+
+            if (info.media.length === 0 && isMediaPage()) {
+                noteEmptyMediaTab();
+            }
         } catch (e) {
             warn('Media report failed', e);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Empty media tab: X filters the grid server-side, but the same photos are
+    // reachable through profile search (`from:user filter:media`). Offer that
+    // route instead of leaving the tab as a dead end.
+    // -----------------------------------------------------------------------
+    const FALLBACK_ATTEMPTS = 40;
+    const FALLBACK_INTERVAL = 500;
+    let fallbackNoted = false;
+    let fallbackInserted = false;
+
+    function screenNameFromPath() {
+        try {
+            const path = win.location && win.location.pathname;
+            if (typeof path !== 'string') return null;
+            const match = path.match(/^\/([A-Za-z0-9_]+)\/media\/?$/);
+            return match ? match[1] : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function searchMediaUrl(screenName) {
+        const origin = (win.location && win.location.origin) || 'https://x.com';
+        return origin + '/search?q=' +
+            encodeURIComponent('from:' + screenName + ' filter:media') + '&f=image';
+    }
+
+    function insertFallbackPanel(panel) {
+        try {
+            if (!doc || typeof doc.querySelector !== 'function') return false;
+
+            const empty = doc.querySelector('[data-testid="emptyState"]');
+            if (empty && empty.parentNode) {
+                empty.parentNode.insertBefore(panel, empty);
+                return true;
+            }
+
+            const column = doc.querySelector('[data-testid="primaryColumn"]');
+            if (column) {
+                column.insertBefore(panel, column.firstChild);
+                return true;
+            }
+        } catch (e) {
+            warn('Could not insert the media fallback panel', e);
+        }
+
+        return false;
+    }
+
+    function buildFallbackPanel(screenName, searchUrl) {
+        const panel = doc.createElement('div');
+        panel.setAttribute('data-agebypassx', 'media-fallback');
+        panel.style.cssText = 'margin:12px 16px;padding:16px;border:1px solid rgba(127,127,127,.35);' +
+            'border-radius:16px;background:rgba(127,127,127,.08);font:15px/1.4 ' +
+            '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:inherit;';
+
+        const title = doc.createElement('div');
+        title.style.cssText = 'font-weight:700;margin-bottom:4px;';
+        title.textContent = 'X no envía estas fotos a la pestaña de media';
+        panel.appendChild(title);
+
+        const body = doc.createElement('div');
+        body.style.cssText = 'opacity:.8;margin-bottom:12px;';
+        body.textContent = 'Las fotos sí están en el timeline. Puedes verlas todas con una búsqueda del perfil.';
+        panel.appendChild(body);
+
+        const actions = doc.createElement('div');
+        actions.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;';
+
+        const primary = doc.createElement('a');
+        primary.href = searchUrl;
+        primary.textContent = 'Ver todas las fotos';
+        primary.style.cssText = 'padding:8px 16px;border-radius:999px;background:#1d9bf0;color:#fff;' +
+            'font-weight:700;text-decoration:none;';
+        actions.appendChild(primary);
+
+        const secondary = doc.createElement('a');
+        secondary.href = '/' + screenName;
+        secondary.textContent = 'Abrir el timeline';
+        secondary.style.cssText = 'padding:8px 16px;border-radius:999px;border:1px solid rgba(127,127,127,.4);' +
+            'color:inherit;font-weight:700;text-decoration:none;';
+        actions.appendChild(secondary);
+
+        panel.appendChild(actions);
+        return panel;
+    }
+
+    function showFallbackPanel(screenName, searchUrl) {
+        if (fallbackInserted || !doc || typeof doc.createElement !== 'function') return;
+
+        let attempts = 0;
+
+        (function tryInsert() {
+            if (fallbackInserted) return;
+
+            if (insertFallbackPanel(buildFallbackPanel(screenName, searchUrl))) {
+                fallbackInserted = true;
+                return;
+            }
+
+            if (++attempts >= FALLBACK_ATTEMPTS) return;
+
+            try {
+                win.setTimeout(tryInsert, FALLBACK_INTERVAL);
+            } catch (e) {
+                warn('Could not schedule the media fallback panel', e);
+            }
+        })();
+    }
+
+    function noteEmptyMediaTab() {
+        if (fallbackNoted) return;
+
+        const screenName = screenNameFromPath();
+        if (!screenName) return;
+
+        fallbackNoted = true;
+        const url = searchMediaUrl(screenName);
+
+        // Always visible: this is the way out when X returns an empty grid.
+        console.info('[AgebypassX] Media tab empty; photos available via search: ' + url);
+
+        showFallbackPanel(screenName, url);
     }
 
     (function hookResponseJson() {

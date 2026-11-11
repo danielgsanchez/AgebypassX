@@ -2,6 +2,17 @@
 
 All notable changes to this fork are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [3.3.4] – 2026-11-11
+
+### Added
+
+- Empty media tab fallback: when `UserMedia`/hydration returns `0 media`, the script prints the search URL `https://x.com/search?q=from%3A<user>%20filter%3Amedia&f=image` and shows a panel with **Ver todas las fotos** and **Abrir el timeline** at the top of the tab.
+- The panel waits for X's empty state and falls back to the primary column; it is inserted once per page load.
+
+### Documentation
+
+- Explained that the search endpoint is not filtered like the media grid, so it reaches the photos the grid hides.
+
 ## [3.3.3] – 2026-11-11
 
 ### Fixed

@@ -526,3 +526,74 @@ test('ignores hydrated chunks that carry no timeline', () => {
         ['info', '[AgebypassX] v' + PACKAGE.version + ' ready']
     ]);
 });
+
+test('offers the search fallback when the media grid is empty', async () => {
+    const page = load();
+    page.location = { pathname: '/example_user/media', origin: 'https://x.com' };
+
+    const data = {
+        data: {
+            user: {
+                result: {
+                    __typename: 'User',
+                    timeline_v2: { timeline: { instructions: [] } }
+                }
+            }
+        }
+    };
+
+    await new page.Response(
+        data,
+        'https://api.x.com/i/api/graphql/example/UserMedia'
+    ).json();
+
+    const url = 'https://x.com/search?q=from%3Aexample_user%20filter%3Amedia&f=image';
+
+    assert.ok(
+        page.logs.some(entry =>
+            entry[0] === 'info' &&
+            entry[1] === '[AgebypassX] Media tab empty; photos available via search: ' + url
+        ),
+        'expected the search fallback URL'
+    );
+});
+
+test('does not offer the fallback when the grid has media', async () => {
+    const page = load();
+    page.location = { pathname: '/example_user/media', origin: 'https://x.com' };
+
+    const data = {
+        data: {
+            user: {
+                result: {
+                    __typename: 'User',
+                    timeline_v2: {
+                        timeline: {
+                            instructions: [{
+                                entries: [{
+                                    content: {
+                                        itemContent: {
+                                            tweet_results: {
+                                                result: { media_entities2: [photo()] }
+                                            }
+                                        }
+                                    }
+                                }]
+                            }]
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    await new page.Response(
+        data,
+        'https://api.x.com/i/api/graphql/example/UserMedia'
+    ).json();
+
+    assert.ok(
+        !page.logs.some(entry => String(entry[1]).includes('Media tab empty')),
+        'unexpected fallback for a populated grid'
+    );
+});
