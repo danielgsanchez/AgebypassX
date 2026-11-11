@@ -2,6 +2,18 @@
 
 All notable changes to this fork are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [3.3.2] – 2026-11-11
+
+### Added
+
+- Profile media tab diagnostic: `[AgebypassX] UserMedia: N entries, N tweets, N media`.
+- With `DEBUG = true`, the same report lists each media item's `type`, `possibly_sensitive`, warning/blur flags and `ext_media_availability`.
+- Hydration payloads on `/media` pages are also summarised, so the diagnostic works even when the app uses `JSON.parse` instead of `Response.json`.
+
+### Documentation
+
+- Clarified that the profile media grid (`/user/media`) can be filtered **server-side**: the timeline endpoint still returns the photos while the media endpoint returns an empty timeline. In that case the diagnostic prints `0 entries` and no client-side patch can restore the media.
+
 ## [3.3.1] – 2026-11-08
 
 ### Changed

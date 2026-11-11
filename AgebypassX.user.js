@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AgebypassX
 // @namespace    https://github.com/Saganaki22/AgebypassX
-// @version      3.3.1
+// @version      3.3.2
 // @description  Age bypass and sensitive-media unlock for X.com
 // @author       Saganaki22
 // @license      MIT
@@ -21,7 +21,7 @@
     'use strict';
 
     const DEBUG = false;
-    const VERSION = '3.3.1';
+    const VERSION = '3.3.2';
     const log = (...args) => DEBUG && console.log('[AgebypassX]', ...args);
     const warn = (...args) => DEBUG && console.warn('[AgebypassX]', ...args);
     const error = (...args) => console.error('[AgebypassX]', ...args);
@@ -442,8 +442,12 @@
             const result = nativeParse.apply(this, arguments);
 
             try {
-                if (result && typeof result === 'object' && typeof text === 'string' && ANY_TARGET_RE.test(text)) {
-                    patch(result, FLAG_TEXT_RE.test(text) ? 'all' : 'media');
+                if (result && typeof result === 'object' && typeof text === 'string') {
+                    if (ANY_TARGET_RE.test(text)) {
+                        patch(result, FLAG_TEXT_RE.test(text) ? 'all' : 'media');
+                    } else if (isMediaPage() && text.includes('"instructions"')) {
+                        reportMediaResponse('hydration', result);
+                    }
                 }
             } catch (e) {
                 warn('JSON.parse patch failed', e);
@@ -503,6 +507,107 @@
         }
     }
 
+    function operationName(value) {
+        try {
+            const path = new URL(value).pathname;
+            return path.split('/').filter(Boolean).pop() || 'unknown';
+        } catch (e) {
+            return 'unknown';
+        }
+    }
+
+    function isMediaPage() {
+        try {
+            const path = win.location && win.location.pathname;
+            return typeof path === 'string' && /\/media\/?$/.test(path);
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // Summarises a profile media timeline so the console shows whether X sent
+    // pictures or filtered them before the browser ever saw them.
+    function collectTimelineMedia(data) {
+        const result = data && data.data && data.data.user && data.data.user.result;
+        if (!result || typeof result !== 'object') return null;
+
+        const timeline = result.timeline_v2 || result.timeline;
+        const instructions = timeline && timeline.timeline && timeline.timeline.instructions;
+        if (!Array.isArray(instructions)) return null;
+
+        let entries = 0;
+        let tweets = 0;
+        const media = [];
+
+        for (let i = 0; i < instructions.length; i++) {
+            const instruction = instructions[i];
+            if (!instruction || typeof instruction !== 'object') continue;
+
+            const items = [];
+            if (Array.isArray(instruction.entries)) {
+                for (let j = 0; j < instruction.entries.length; j++) items.push(instruction.entries[j]);
+            }
+            if (Array.isArray(instruction.moduleItems)) {
+                for (let j = 0; j < instruction.moduleItems.length; j++) {
+                    const module = instruction.moduleItems[j];
+                    if (!module || !Array.isArray(module.items)) continue;
+                    for (let k = 0; k < module.items.length; k++) items.push(module.items[k]);
+                }
+            }
+
+            entries += items.length;
+
+            for (let j = 0; j < items.length; j++) {
+                const item = items[j];
+                const itemContent = item && item.content && item.content.itemContent;
+                const tweet = itemContent && itemContent.tweet_results && itemContent.tweet_results.result;
+                if (!tweet || typeof tweet !== 'object') continue;
+
+                tweets++;
+                const inner = tweet.tweet || tweet;
+                const list = (Array.isArray(inner.media_entities2) && inner.media_entities2.length)
+                    ? inner.media_entities2
+                    : (inner.legacy && inner.legacy.extended_entities && inner.legacy.extended_entities.media);
+                if (!Array.isArray(list)) continue;
+                for (let k = 0; k < list.length; k++) media.push(list[k]);
+            }
+        }
+
+        return { entries, tweets, media };
+    }
+
+    function reportMediaResponse(source, data) {
+        try {
+            if (data && Array.isArray(data.errors) && data.errors.length) {
+                console.warn('[AgebypassX] ' + source + ' errors:', data.errors);
+            }
+
+            const info = collectTimelineMedia(data);
+            if (!info) {
+                log('Media response without a user timeline:', source);
+                return;
+            }
+
+            // Always visible on media pages: this is the line that tells us
+            // whether the photos were filtered server-side or not.
+            console.info('[AgebypassX] ' + source + ': ' + info.entries + ' entries, ' +
+                info.tweets + ' tweets, ' + info.media.length + ' media');
+
+            if (DEBUG) {
+                log('Media types:', info.media.map(m => m && m.type));
+                log('Media flags:', info.media.map(m => ({
+                    sensitive: !!(m && m.possibly_sensitive),
+                    warning: !!(m && m.sensitive_media_warning),
+                    blur: !!(m && m.media_visibility_results &&
+                        m.media_visibility_results.blurred_image_interstitial),
+                    availability: m && m.ext_media_availability && m.ext_media_availability.status
+                })));
+            }
+        } catch (e) {
+            warn('Media report failed', e);
+        }
+    }
+
     (function hookResponseJson() {
         try {
             const responseProto = win.Response && win.Response.prototype;
@@ -521,6 +626,9 @@
                         // are checked only when they plausibly appear.
                         if (isXApiUrl(response.url)) {
                             patch(data, 'all');
+
+                            const op = operationName(response.url);
+                            if (/media/i.test(op)) reportMediaResponse(op, data);
                         } else if (hasFlagsNearby(data, 3)) {
                             patch(data);
                         }

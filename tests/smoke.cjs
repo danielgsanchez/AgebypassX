@@ -379,3 +379,87 @@ test('leaves malformed, failed and missing-media hydration results alone', () =>
 
     assert.deepEqual(results.map(result => result.value), original);
 });
+
+test('reports an empty UserMedia timeline', async () => {
+    const page = load();
+
+    const data = {
+        data: {
+            user: {
+                result: {
+                    __typename: 'User',
+                    timeline_v2: { timeline: { instructions: [] } }
+                }
+            }
+        }
+    };
+
+    const response = new page.Response(
+        data,
+        'https://api.x.com/i/api/graphql/example/UserMedia'
+    );
+
+    await response.json();
+
+    assert.ok(
+        page.logs.some(entry =>
+            entry[0] === 'info' &&
+            entry[1] === '[AgebypassX] UserMedia: 0 entries, 0 tweets, 0 media'
+        ),
+        'expected the empty UserMedia summary line'
+    );
+});
+
+test('reports the media count that X actually sent', async () => {
+    const page = load();
+
+    const data = {
+        data: {
+            user: {
+                result: {
+                    __typename: 'User',
+                    timeline_v2: {
+                        timeline: {
+                            instructions: [{
+                                entries: [{
+                                    content: {
+                                        itemContent: {
+                                            tweet_results: {
+                                                result: {
+                                                    legacy: {
+                                                        extended_entities: {
+                                                            media: [withWarning(photo())]
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }]
+                            }]
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    const response = new page.Response(
+        data,
+        'https://api.x.com/i/api/graphql/example/UserMedia'
+    );
+
+    const parsed = await response.json();
+    const media = parsed.data.user.result.timeline_v2.timeline
+        .instructions[0].entries[0].content.itemContent
+        .tweet_results.result.legacy.extended_entities.media[0];
+
+    assert.equal(media.sensitive_media_warning, undefined);
+    assert.ok(
+        page.logs.some(entry =>
+            entry[0] === 'info' &&
+            entry[1] === '[AgebypassX] UserMedia: 1 entries, 1 tweets, 1 media'
+        ),
+        'expected the UserMedia summary with one item'
+    );
+});

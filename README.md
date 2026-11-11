@@ -1,8 +1,8 @@
-# 🛡️ AgebypassX – v3.3.1
+# 🛡️ AgebypassX – v3.3.2
 
 Bypass **Twitter/X**'s client-side age restrictions and unlock **sensitive media** without sending anything to a third party.
 
-> v3.3.1 is a patch on v3.3.0: it always prints one short startup line so you can confirm the script loaded. Verbose hook logging remains behind `DEBUG`.
+> v3.3.2 adds a diagnostic line for profile media tabs: `[AgebypassX] UserMedia: N entries, N tweets, N media`. It tells you whether X sent the photos or filtered them server-side. It also always prints one short startup line, so you can confirm the script loaded; verbose hook logging remains behind `DEBUG`.
 
 > v3.3.0 fixes the intermittent case where age-restricted media stayed blurred until you pressed F5. The blur can arrive inside the timeline/direct-post API payload itself, _after_ `__INITIAL_STATE__` has already been patched, so the old version was racing the network.
 
@@ -26,7 +26,7 @@ v3.3.0 adds:
 * **`JSON.parse`, `Response.json` and `Object.assign` hooks**, so timeline pages, direct posts and WebSocket updates are covered.
 * **`unsafeWindow` support**, so the hooks target the page realm even when the userscript manager runs the script in a sandbox.
 * **Targeted walkers**: flags, birthdate and media are only inspected when the object's own keys say they are relevant, with hard scan limits.
-* **12 dependency-free tests** and a version-sync check.
+* **14 dependency-free tests** and a version-sync check.
 
 ---
 
@@ -88,7 +88,7 @@ Set `const DEBUG = false;` to `true` at the top of the userscript and reload. Co
 By default the script always prints one line on load:
 
 ```text
-[AgebypassX] v3.3.1 ready
+[AgebypassX] v3.3.2 ready
 ```
 
 With `DEBUG = true` you also get the hook details:
@@ -103,6 +103,20 @@ With `DEBUG = true` you also get the hook details:
 
 A missing `State hook ready` means X exposed `__INITIAL_STATE__` in a way the script could not wrap; the response hooks still run.
 
+### Profile media tab
+
+On `https://x.com/<user>/media`, the script always prints one summary line when the media timeline arrives:
+
+```text
+[AgebypassX] UserMedia: 0 entries, 0 tweets, 0 media
+[AgebypassX] UserMedia: 20 entries, 20 tweets, 30 media
+```
+
+* `0 entries` means X returned an empty media timeline. The photos are being filtered **before they reach the browser**, so no userscript can restore them.
+* A non-zero count means the photos did arrive, and the script already removed their warnings. If the grid still looks wrong, enable `DEBUG` and check the `Media flags` line.
+
+The profile timeline (`/user`) and the media tab (`/user/media`) use different endpoints. X can hide sensitive media from the media grid while still returning it, blurred, in the timeline. In that case use the timeline, or load the media tab through a region where X does not apply the filter.
+
 ---
 
 ## 🧪 Tests
@@ -111,10 +125,10 @@ No dependencies are required:
 
 ```bash
 npm run check   # syntax check
-npm test        # 12 tests + version sync
+npm test        # 14 tests + version sync
 ```
 
-The suite covers flags, birthdate spoofing, per-media warnings, post-level wrappers, unavailable media, non-X origins, `Response.json`, and TanStack hydration (initial, streamed, malformed, frozen and missing-media cases).
+The suite covers flags, birthdate spoofing, per-media warnings, post-level wrappers, unavailable media, non-X origins, `Response.json`, profile media diagnostics, and TanStack hydration (initial, streamed, malformed, frozen and missing-media cases).
 
 ---
 
@@ -133,6 +147,7 @@ The suite covers flags, birthdate spoofing, per-media warnings, post-level wrapp
 ## ⚠️ Limitations
 
 * This only bypasses **client-side** gating. Server-side removals or legal blocks cannot be undone from the browser.
+* The profile media tab (`/user/media`) is filtered **server-side** for some accounts and regions: X can return an empty timeline even though the same photos are visible in the profile timeline. The `UserMedia: 0 entries` diagnostic line confirms it. A VPN or using the timeline works around it; the script cannot invent media X never sent.
 * If X changes the flag names or the media payload structure, the script may silently do nothing. Enable `DEBUG` and check the console.
 * The script does not modify account settings, cookies or requests; it only edits the data X already sent to your browser.
 * `sensitive_media_settings_enabled` is intentionally set to `true`; the other flags are disabled.
