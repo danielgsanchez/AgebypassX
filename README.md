@@ -1,8 +1,8 @@
-# 🛡️ AgebypassX – v3.3.4
+# 🛡️ AgebypassX – v3.3.5
 
 Bypass **Twitter/X**'s client-side age restrictions and unlock **sensitive media** without sending anything to a third party.
 
-> v3.3.4 adds a way out of the empty media tab: when X returns `0 media`, the tab shows a small panel with **Ver todas las fotos**, which opens the profile search (`from:user filter:media`) — the same photos, unfiltered. The diagnostic and the shape-agnostic timeline walk from 3.3.2/3.3.3 are still there.
+> v3.3.5 keeps the UI text English-only, matching the rest of the script. v3.3.4 added the way out of the empty media tab: when X returns `0 media`, a small panel offers **See all photos**, which opens the profile search (`from:user filter:media`) — the same photos, unfiltered.
 
 > v3.3.0 fixes the intermittent case where age-restricted media stayed blurred until you pressed F5. The blur can arrive inside the timeline/direct-post API payload itself, _after_ `__INITIAL_STATE__` has already been patched, so the old version was racing the network.
 
@@ -88,7 +88,7 @@ Set `const DEBUG = false;` to `true` at the top of the userscript and reload. Co
 By default the script always prints one line on load:
 
 ```text
-[AgebypassX] v3.3.4 ready
+[AgebypassX] v3.3.5 ready
 ```
 
 With `DEBUG = true` you also get the hook details:
@@ -127,7 +127,7 @@ When X returns `0 media`, the script prints:
 [AgebypassX] Media tab empty; photos available via search: https://x.com/search?q=from%3A<user>%20filter%3Amedia&f=image
 ```
 
-and adds a small panel at the top of the tab with **Ver todas las fotos** (that search) and **Abrir el timeline**. The search endpoint is not filtered the same way as the media grid, so the photos are usually all there — including the ones the grid hides. The panel appears only on `/user/media` pages whose media timeline came back empty, and only once per load.
+and adds a small panel at the top of the tab with **See all photos** (that search) and **Open the timeline**. The search endpoint is not filtered the same way as the media grid, so the photos are usually all there — including the ones the grid hides. The panel appears only on `/user/media` pages whose media timeline came back empty, and only once per load.
 
 ---
 
@@ -159,7 +159,7 @@ The suite covers flags, birthdate spoofing, per-media warnings, post-level wrapp
 ## ⚠️ Limitations
 
 * This only bypasses **client-side** gating. Server-side removals or legal blocks cannot be undone from the browser.
-* The profile media tab (`/user/media`) is filtered **server-side** for some accounts and regions: X can return an empty timeline even though the same photos are visible in the profile timeline. The `UserMedia: 0 entries` diagnostic line confirms it. The panel's **Ver todas las fotos** search (`from:user filter:media`) usually reaches them; the script cannot invent media X never sent.
+* The profile media tab (`/user/media`) is filtered **server-side** for some accounts and regions: X can return an empty timeline even though the same photos are visible in the profile timeline. The `UserMedia: 0 entries` diagnostic line confirms it. The panel's **See all photos** search (`from:user filter:media`) usually reaches them; the script cannot invent media X never sent.
 * If X changes the flag names or the media payload structure, the script may silently do nothing. Enable `DEBUG` and check the console.
 * The script does not modify account settings, cookies or requests; it only edits the data X already sent to your browser.
 * `sensitive_media_settings_enabled` is intentionally set to `true`; the other flags are disabled.

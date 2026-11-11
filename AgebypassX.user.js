@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AgebypassX
 // @namespace    https://github.com/Saganaki22/AgebypassX
-// @version      3.3.4
+// @version      3.3.5
 // @description  Age bypass and sensitive-media unlock for X.com
 // @author       Saganaki22
 // @license      MIT
@@ -21,7 +21,7 @@
     'use strict';
 
     const DEBUG = false;
-    const VERSION = '3.3.4';
+    const VERSION = '3.3.5';
     const log = (...args) => DEBUG && console.log('[AgebypassX]', ...args);
     const warn = (...args) => DEBUG && console.warn('[AgebypassX]', ...args);
     const error = (...args) => console.error('[AgebypassX]', ...args);
@@ -736,12 +736,12 @@
 
         const title = doc.createElement('div');
         title.style.cssText = 'font-weight:700;margin-bottom:4px;';
-        title.textContent = 'X no envía estas fotos a la pestaña de media';
+        title.textContent = 'X does not send these photos to the media tab';
         panel.appendChild(title);
 
         const body = doc.createElement('div');
         body.style.cssText = 'opacity:.8;margin-bottom:12px;';
-        body.textContent = 'Las fotos sí están en el timeline. Puedes verlas todas con una búsqueda del perfil.';
+        body.textContent = 'The photos are in the timeline. You can see them all with a profile search.';
         panel.appendChild(body);
 
         const actions = doc.createElement('div');
@@ -749,14 +749,14 @@
 
         const primary = doc.createElement('a');
         primary.href = searchUrl;
-        primary.textContent = 'Ver todas las fotos';
+        primary.textContent = 'See all photos';
         primary.style.cssText = 'padding:8px 16px;border-radius:999px;background:#1d9bf0;color:#fff;' +
             'font-weight:700;text-decoration:none;';
         actions.appendChild(primary);
 
         const secondary = doc.createElement('a');
         secondary.href = '/' + screenName;
-        secondary.textContent = 'Abrir el timeline';
+        secondary.textContent = 'Open the timeline';
         secondary.style.cssText = 'padding:8px 16px;border-radius:999px;border:1px solid rgba(127,127,127,.4);' +
             'color:inherit;font-weight:700;text-decoration:none;';
         actions.appendChild(secondary);

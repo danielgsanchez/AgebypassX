@@ -2,11 +2,17 @@
 
 All notable changes to this fork are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [3.3.5] – 2026-11-11
+
+### Changed
+
+- The empty-media panel is English-only, like the console messages and the README. No language detection, no translation table.
+
 ## [3.3.4] – 2026-11-11
 
 ### Added
 
-- Empty media tab fallback: when `UserMedia`/hydration returns `0 media`, the script prints the search URL `https://x.com/search?q=from%3A<user>%20filter%3Amedia&f=image` and shows a panel with **Ver todas las fotos** and **Abrir el timeline** at the top of the tab.
+- Empty media tab fallback: when `UserMedia`/hydration returns `0 media`, the script prints the search URL `https://x.com/search?q=from%3A<user>%20filter%3Amedia&f=image` and shows a panel with **See all photos** and **Open the timeline** at the top of the tab.
 - The panel waits for X's empty state and falls back to the primary column; it is inserted once per page load.
 
 ### Documentation
