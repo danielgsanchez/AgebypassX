@@ -83,26 +83,12 @@ If the media is missing, unavailable, or only a video poster is present, the war
 
 The media grid (`/user/media`) uses a different endpoint from the profile timeline (`/user`). X can return an **empty grid** for some accounts and regions even though the timeline still has the photos. That is a server-side filter, not a blur, and no userscript can bring back media X never sent.
 
-On that page the script prints a summary as soon as the media timeline arrives:
-
-```text
-[AgebypassX] UserMedia: 0 entries, 0 tweets, 0 media
-[AgebypassX] hydration: 20 entries, 20 tweets, 30 media
-```
-
-The summary walks the whole payload, so timelines nested in dehydrated state or RSC chunks are counted too.
-
-| Output | Meaning |
-| --- | --- |
-| `0 entries` | X returned an empty timeline. The photos were filtered before reaching the browser. |
-| `media > 0` | The photos arrived and their warnings were already removed. |
-
-When the grid is empty, the script adds a panel at the top of the tab:
+When the grid is empty, X renders its own empty state on the tab, and the script adds a panel next to it:
 
 * **See all photos** — opens `https://x.com/search?q=from:<user> filter:media&f=image`.
 * **Open the timeline** — opens the profile.
 
-The search endpoint is not filtered the same way as the grid, so it usually reaches the photos the grid hides. The panel appears every time you open a profile's media tab whose timeline came back empty, including when you get there from the profile, and it is removed when you leave the tab. Its text is English.
+The search endpoint is not filtered the same way as the grid, so it usually reaches the photos the grid hides. The script watches the route and that empty state, so the panel also appears when you reach the tab from the profile, and it is removed when you leave the tab or when the photos arrive. Its text is English.
 
 If the search is empty too, check the search settings (three-dot menu → **Search settings**) and disable **Hide sensitive content**.
 
@@ -130,7 +116,7 @@ or, when the state is assigned later:
 
 A missing `State hook ready` means X exposed `__INITIAL_STATE__` in a way the script could not wrap; the response hooks still run.
 
-For media pages, `DEBUG` also lists each item's `type`, `possibly_sensitive`, warning/blur flags and `ext_media_availability`. Payloads that carry no timeline log `Media payload without a timeline` and are otherwise ignored.
+On an empty media tab, the console prints the search URL once per visit, prefixed with `[AgebypassX] Media tab empty`.
 
 ---
 
@@ -140,10 +126,10 @@ No dependencies are required:
 
 ```bash
 npm run check   # syntax check
-npm test        # 21 tests + version sync
+npm test        # 19 tests + version sync
 ```
 
-The suite covers flags, birthdate spoofing, per-media warnings, post-level wrappers, unavailable media, non-X origins, `Response.json`, profile media diagnostics (plain, empty, nested hydration, unrelated payloads, prefetch-before-navigation and the search fallback), and TanStack hydration (initial, streamed, malformed, frozen and missing-media cases).
+The suite covers flags, birthdate spoofing, per-media warnings, post-level wrappers, unavailable media, non-X origins, `Response.json`, the media card (empty grid, populated grid, repeated checks, leaving the tab, another profile and a re-rendered column), and TanStack hydration (initial, streamed, malformed, frozen and missing-media cases).
 
 CI runs the same suite on Node.js 22 and 24; 22 is the minimum supported runtime.
 
@@ -166,7 +152,7 @@ Release history lives in [`CHANGELOG.md`](./CHANGELOG.md).
 ## ⚠️ Limitations
 
 * This only bypasses **client-side** gating. Server-side removals or legal blocks cannot be undone from the browser.
-* The media grid is filtered **server-side** for some accounts and regions. The diagnostic line confirms it; the panel's search usually works around it.
+* The media grid is filtered **server-side** for some accounts and regions. That is why the tab can be empty while the photos exist; the panel's search usually works around it.
 * If X changes the flag names or the media payload structure, the script may silently do nothing. Enable `DEBUG` and check the console.
 * The script does not modify account settings, cookies or requests; it only edits the data X already sent to your browser.
 * `sensitive_media_settings_enabled` is intentionally set to `true`; the other flags are disabled.

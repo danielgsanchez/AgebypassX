@@ -2,6 +2,22 @@
 
 All notable changes to this fork are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [3.3.7] – 2026-11-11
+
+### Fixed
+
+- The media card no longer appears and disappears. The trigger is now X's own empty state on `/user/media` (`[data-testid="emptyState"]`): the card is inserted next to it and removed when the photos arrive or the route changes.
+- Removed the payload-driven state that caused the flicker: per-profile marks, TTL, prefetch handling and hydration heuristics. A hydration chunk carrying another timeline can no longer hide the card, and React re-renders no longer leave a detached card behind.
+
+### Changed
+
+- The card is a single DOM watcher (500 ms) instead of history hooks, retry timers and per-user state. It works the same on direct loads and in-app navigation, and it no longer logs the media summary on every parsed chunk.
+- Removed the `entries/tweets/media` diagnostic, the `hydration`/`UserMedia` summary lines and the per-item debug dump. The console now prints one line with the search URL when the card is shown.
+
+### Tests
+
+- The media suite was rewritten around the DOM card: empty grid, populated grid, repeated checks, leaving the tab, another profile and a re-rendered column.
+
 ## [3.3.6] – 2026-11-11
 
 ### Fixed

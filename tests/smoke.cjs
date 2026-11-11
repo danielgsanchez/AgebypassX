@@ -132,16 +132,127 @@ function withWarning(media, extra = {}) {
     };
 }
 
-function emptyMediaData(screenName) {
-    return {
-        data: {
-            user: {
-                result: {
-                    __typename: 'User',
-                    legacy: { screen_name: screenName },
-                    timeline_v2: { timeline: { instructions: [] } }
-                }
+// Minimal DOM: enough for the media card (createElement, querySelector,
+// querySelectorAll, insertBefore and removeChild).
+function createNode(tagName) {
+    const node = {
+        tagName,
+        parentNode: null,
+        children: [],
+        attrs: {},
+        style: {},
+        textContent: '',
+        get firstChild() {
+            return node.children[0] || null;
+        },
+        get isConnected() {
+            let current = node;
+            while (current.parentNode) current = current.parentNode;
+            return current.__root === true;
+        },
+        setAttribute(name, value) {
+            node.attrs[name] = String(value);
+        },
+        appendChild(child) {
+            return node.insertBefore(child, null);
+        },
+        insertBefore(child, reference) {
+            if (child.parentNode) child.parentNode.removeChild(child);
+            const index = reference ? node.children.indexOf(reference) : -1;
+            if (index >= 0) node.children.splice(index, 0, child);
+            else node.children.push(child);
+            child.parentNode = node;
+            return child;
+        },
+        removeChild(child) {
+            const index = node.children.indexOf(child);
+            if (index >= 0) node.children.splice(index, 1);
+            child.parentNode = null;
+            return child;
+        }
+    };
+
+    return node;
+}
+
+function attachFakeDom(page) {
+    const root = createNode('#document');
+    root.__root = true;
+
+    let primaryColumn = createNode('div');
+    primaryColumn.attrs['data-testid'] = 'primaryColumn';
+    root.appendChild(primaryColumn);
+
+    let emptyState = createNode('div');
+    emptyState.attrs['data-testid'] = 'emptyState';
+    primaryColumn.appendChild(emptyState);
+
+    function collect(node, selector, found) {
+        if (selector === '[data-agebypassx="media-fallback"]' &&
+            node.attrs && node.attrs['data-agebypassx'] === 'media-fallback') {
+            found.push(node);
+        }
+
+        for (let i = 0; i < node.children.length; i++) collect(node.children[i], selector, found);
+    }
+
+    Object.assign(page.document, {
+        documentElement: root,
+        createElement: tagName => createNode(tagName),
+        querySelector(selector) {
+            if (selector === '[data-testid="emptyState"]') {
+                return emptyState && emptyState.isConnected ? emptyState : null;
             }
+            if (selector === '[data-testid="primaryColumn"]') {
+                return primaryColumn.isConnected ? primaryColumn : null;
+            }
+
+            const found = [];
+            collect(root, selector, found);
+            return found[0] || null;
+        },
+        querySelectorAll(selector) {
+            const found = [];
+            collect(root, selector, found);
+            return found;
+        }
+    });
+
+    return {
+        root,
+        get primaryColumn() {
+            return primaryColumn;
+        },
+        setEmptyState(present) {
+            if (present) {
+                if (!emptyState || !emptyState.isConnected) {
+                    emptyState = createNode('div');
+                    emptyState.attrs['data-testid'] = 'emptyState';
+                    primaryColumn.appendChild(emptyState);
+                }
+                return;
+            }
+
+            if (emptyState && emptyState.parentNode) {
+                emptyState.parentNode.removeChild(emptyState);
+            }
+        },
+        // Simulates React replacing the whole column after a re-render.
+        rerenderColumn(withEmptyState) {
+            if (primaryColumn.parentNode) primaryColumn.parentNode.removeChild(primaryColumn);
+
+            primaryColumn = createNode('div');
+            primaryColumn.attrs['data-testid'] = 'primaryColumn';
+            root.appendChild(primaryColumn);
+
+            emptyState = null;
+            if (withEmptyState) this.setEmptyState(true);
+            return primaryColumn;
+        },
+        panels() {
+            const found = [];
+            collect(root, '[data-agebypassx="media-fallback"]', found);
+            return found;
         }
     };
 }
@@ -400,319 +511,112 @@ test('leaves malformed, failed and missing-media hydration results alone', () =>
     assert.deepEqual(results.map(result => result.value), original);
 });
 
-test('reports an empty UserMedia timeline', async () => {
+test('shows the media card on an empty media tab', () => {
     const page = load();
-
-    const data = {
-        data: {
-            user: {
-                result: {
-                    __typename: 'User',
-                    timeline_v2: { timeline: { instructions: [] } }
-                }
-            }
-        }
-    };
-
-    const response = new page.Response(
-        data,
-        'https://api.x.com/i/api/graphql/example/UserMedia'
-    );
-
-    await response.json();
-
-    assert.ok(
-        page.logs.some(entry =>
-            entry[0] === 'info' &&
-            entry[1] === '[AgebypassX] UserMedia: 0 entries, 0 tweets, 0 media'
-        ),
-        'expected the empty UserMedia summary line'
-    );
-});
-
-test('reports the media count that X actually sent', async () => {
-    const page = load();
-
-    const data = {
-        data: {
-            user: {
-                result: {
-                    __typename: 'User',
-                    timeline_v2: {
-                        timeline: {
-                            instructions: [{
-                                entries: [{
-                                    content: {
-                                        itemContent: {
-                                            tweet_results: {
-                                                result: {
-                                                    legacy: {
-                                                        extended_entities: {
-                                                            media: [withWarning(photo())]
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }]
-                            }]
-                        }
-                    }
-                }
-            }
-        }
-    };
-
-    const response = new page.Response(
-        data,
-        'https://api.x.com/i/api/graphql/example/UserMedia'
-    );
-
-    const parsed = await response.json();
-    const media = parsed.data.user.result.timeline_v2.timeline
-        .instructions[0].entries[0].content.itemContent
-        .tweet_results.result.legacy.extended_entities.media[0];
-
-    assert.equal(media.sensitive_media_warning, undefined);
-    assert.ok(
-        page.logs.some(entry =>
-            entry[0] === 'info' &&
-            entry[1] === '[AgebypassX] UserMedia: 1 entries, 1 tweets, 1 media'
-        ),
-        'expected the UserMedia summary with one item'
-    );
-});
-
-test('reports a media timeline nested in hydrated state', () => {
-    const page = load();
-    page.location = { pathname: '/example_user/media' };
-
-    const payload = {
-        state: {
-            queries: [{
-                state: {
-                    data: {
-                        user: {
-                            result: {
-                                __typename: 'User',
-                                timeline: {
-                                    timeline: {
-                                        instructions: [{
-                                            moduleItems: [{
-                                                items: [{
-                                                    item: {
-                                                        itemContent: {
-                                                            tweet_results: {
-                                                                result: {
-                                                                    media_entities2: [photo()]
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }]
-                                            }]
-                                        }]
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }]
-        }
-    };
-
-    page.JSON.parse(JSON.stringify(payload));
-
-    assert.ok(
-        page.logs.some(entry =>
-            entry[0] === 'info' &&
-            entry[1] === '[AgebypassX] hydration: 1 entries, 1 tweets, 1 media'
-        ),
-        'expected the nested timeline to be summarised'
-    );
-});
-
-test('ignores hydrated chunks that carry no timeline', () => {
-    const page = load();
-    page.location = { pathname: '/example_user/media' };
-
-    page.JSON.parse(JSON.stringify({
-        data: { viewer: { instructions: 'not-a-timeline' } }
-    }));
-
-    assert.deepEqual(page.logs, [
-        ['info', '[AgebypassX] v' + PACKAGE.version + ' ready']
-    ]);
-});
-
-test('offers the search fallback when the media grid is empty', async () => {
-    const page = load();
+    const dom = attachFakeDom(page);
     page.location = { pathname: '/example_user/media', origin: 'https://x.com' };
 
-    const data = {
-        data: {
-            user: {
-                result: {
-                    __typename: 'User',
-                    timeline_v2: { timeline: { instructions: [] } }
-                }
-            }
-        }
-    };
-
-    await new page.Response(
-        data,
-        'https://api.x.com/i/api/graphql/example/UserMedia'
-    ).json();
-
-    const url = 'https://x.com/search?q=from%3Aexample_user%20filter%3Amedia&f=image';
-
-    assert.ok(
-        page.logs.some(entry =>
-            entry[0] === 'info' &&
-            entry[1] === '[AgebypassX] Media tab empty; photos available via search: ' + url
-        ),
-        'expected the search fallback URL'
-    );
-});
-
-test('does not offer the fallback when the grid has media', async () => {
-    const page = load();
-    page.location = { pathname: '/example_user/media', origin: 'https://x.com' };
-
-    const data = {
-        data: {
-            user: {
-                result: {
-                    __typename: 'User',
-                    timeline_v2: {
-                        timeline: {
-                            instructions: [{
-                                entries: [{
-                                    content: {
-                                        itemContent: {
-                                            tweet_results: {
-                                                result: { media_entities2: [photo()] }
-                                            }
-                                        }
-                                    }
-                                }]
-                            }]
-                        }
-                    }
-                }
-            }
-        }
-    };
-
-    await new page.Response(
-        data,
-        'https://api.x.com/i/api/graphql/example/UserMedia'
-    ).json();
-
-    assert.ok(
-        !page.logs.some(entry => String(entry[1]).includes('Media tab empty')),
-        'unexpected fallback for a populated grid'
-    );
-});
-
-test('keeps the fallback when the media payload arrives before the route changes', async () => {
-    const page = load();
-    page.location = { pathname: '/example_user', origin: 'https://x.com' };
-
-    await new page.Response(
-        emptyMediaData('example_user'),
-        'https://api.x.com/i/api/graphql/example/UserMedia'
-    ).json();
-
-    assert.ok(
-        !page.logs.some(entry => String(entry[1]).includes('Media tab empty')),
-        'the panel must wait until the media tab is open'
-    );
-
-    page.location.pathname = '/example_user/media';
     page.intervals.forEach(check => check());
 
-    assert.ok(
-        page.logs.some(entry =>
-            entry[0] === 'info' &&
-            entry[1] === '[AgebypassX] Media tab empty; photos available via search: ' +
-                'https://x.com/search?q=from%3Aexample_user%20filter%3Amedia&f=image'
-        ),
-        'expected the panel after the in-app navigation'
-    );
+    const panels = dom.panels();
+    assert.equal(panels.length, 1);
+    assert.equal(panels[0].parentNode, dom.primaryColumn);
+    assert.equal(dom.primaryColumn.children[0], panels[0], 'expected the card above the empty state');
+    assert.ok(page.logs.some(entry =>
+        entry[0] === 'info' &&
+        entry[1] === '[AgebypassX] Media tab empty; photos available via search: ' +
+            'https://x.com/search?q=from%3Aexample_user%20filter%3Amedia&f=image'
+    ));
 });
 
-test('drops the empty mark when the timeline later has media', async () => {
+test('does not show the card when the grid has content', () => {
     const page = load();
-    page.location = { pathname: '/example_user', origin: 'https://x.com' };
-
-    await new page.Response(
-        emptyMediaData('example_user'),
-        'https://api.x.com/i/api/graphql/example/UserMedia'
-    ).json();
-
-    await new page.Response({
-        data: {
-            user: {
-                result: {
-                    __typename: 'User',
-                    legacy: { screen_name: 'example_user' },
-                    timeline_v2: {
-                        timeline: {
-                            instructions: [{
-                                entries: [{
-                                    content: {
-                                        itemContent: {
-                                            tweet_results: {
-                                                result: { media_entities2: [photo()] }
-                                            }
-                                        }
-                                    }
-                                }]
-                            }]
-                        }
-                    }
-                }
-            }
-        }
-    }, 'https://api.x.com/i/api/graphql/example/UserMedia').json();
-
-    page.location.pathname = '/example_user/media';
-    page.intervals.forEach(check => check());
-
-    assert.ok(
-        !page.logs.some(entry => String(entry[1]).includes('Media tab empty')),
-        'the stale empty mark should be gone'
-    );
-});
-
-test('shows the fallback for a second profile in the same session', async () => {
-    const page = load();
+    const dom = attachFakeDom(page);
+    dom.setEmptyState(false);
     page.location = { pathname: '/example_user/media', origin: 'https://x.com' };
 
-    await new page.Response(
-        emptyMediaData('example_user'),
-        'https://api.x.com/i/api/graphql/example/UserMedia'
-    ).json();
+    page.intervals.forEach(check => check());
 
-    assert.ok(
-        page.logs.some(entry => String(entry[1]).includes('from%3Aexample_user')),
-        'expected the first profile to be remembered'
-    );
+    assert.equal(dom.panels().length, 0);
+    assert.ok(!page.logs.some(entry => String(entry[1]).includes('Media tab empty')));
+});
+
+test('keeps a single card across repeated checks', () => {
+    const page = load();
+    const dom = attachFakeDom(page);
+    page.location = { pathname: '/example_user/media', origin: 'https://x.com' };
+
+    for (let i = 0; i < 5; i++) page.intervals.forEach(check => check());
+
+    assert.equal(dom.panels().length, 1);
+
+    const lines = page.logs.filter(entry => String(entry[1]).includes('Media tab empty'));
+    assert.equal(lines.length, 1, 'expected a single log line');
+});
+
+test('removes the card when the photos arrive', () => {
+    const page = load();
+    const dom = attachFakeDom(page);
+    page.location = { pathname: '/example_user/media', origin: 'https://x.com' };
+
+    page.intervals.forEach(check => check());
+    assert.equal(dom.panels().length, 1);
+
+    dom.setEmptyState(false);
+    page.intervals.forEach(check => check());
+
+    assert.equal(dom.panels().length, 0);
+});
+
+test('removes the card when leaving the media tab', () => {
+    const page = load();
+    const dom = attachFakeDom(page);
+    page.location = { pathname: '/example_user/media', origin: 'https://x.com' };
+
+    page.intervals.forEach(check => check());
+    assert.equal(dom.panels().length, 1);
+
+    page.location.pathname = '/example_user';
+    page.intervals.forEach(check => check());
+
+    assert.equal(dom.panels().length, 0);
+});
+
+test('rebuilds the card for another profile', () => {
+    const page = load();
+    const dom = attachFakeDom(page);
+    page.location = { pathname: '/example_user/media', origin: 'https://x.com' };
+
+    page.intervals.forEach(check => check());
+    assert.equal(dom.panels().length, 1);
 
     page.location.pathname = '/other_user/media';
     page.intervals.forEach(check => check());
 
-    await new page.Response(
-        emptyMediaData('other_user'),
-        'https://api.x.com/i/api/graphql/example/UserMedia'
-    ).json();
-
-    assert.ok(
-        page.logs.some(entry => String(entry[1]).includes('from%3Aother_user')),
-        'expected the second profile to get its own fallback'
+    const panels = dom.panels();
+    assert.equal(panels.length, 1);
+    assert.equal(
+        panels[0].children[2].children[0].href,
+        'https://x.com/search?q=from%3Aother_user%20filter%3Amedia&f=image'
     );
+});
+
+test('re-inserts the card after React re-renders the empty state', () => {
+    const page = load();
+    const dom = attachFakeDom(page);
+    page.location = { pathname: '/example_user/media', origin: 'https://x.com' };
+
+    page.intervals.forEach(check => check());
+    assert.equal(dom.panels().length, 1);
+
+    const column = dom.rerenderColumn(true);
+    page.intervals.forEach(check => check());
+
+    const panels = dom.panels();
+    assert.equal(panels.length, 1);
+    assert.equal(panels[0].parentNode, column);
+    assert.equal(column.children[0], panels[0], 'expected the card above the new empty state');
+
+    const lines = page.logs.filter(entry => String(entry[1]).includes('Media tab empty'));
+    assert.equal(lines.length, 1, 're-inserting must not log again');
 });

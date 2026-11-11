@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AgebypassX
 // @namespace    https://github.com/Saganaki22/AgebypassX
-// @version      3.3.6
+// @version      3.3.7
 // @description  Age bypass and sensitive-media unlock for X.com
 // @author       Saganaki22
 // @license      MIT
@@ -21,7 +21,7 @@
     'use strict';
 
     const DEBUG = false;
-    const VERSION = '3.3.6';
+    const VERSION = '3.3.7';
     const log = (...args) => DEBUG && console.log('[AgebypassX]', ...args);
     const warn = (...args) => DEBUG && console.warn('[AgebypassX]', ...args);
     const error = (...args) => console.error('[AgebypassX]', ...args);
@@ -445,8 +445,6 @@
                 if (result && typeof result === 'object' && typeof text === 'string') {
                     if (ANY_TARGET_RE.test(text)) {
                         patch(result, FLAG_TEXT_RE.test(text) ? 'all' : 'media');
-                    } else if (isMediaPage() && text.includes('"instructions"')) {
-                        reportMediaResponse('hydration', result);
                     }
                 }
             } catch (e) {
@@ -507,431 +505,6 @@
         }
     }
 
-    function operationName(value) {
-        try {
-            const path = new URL(value).pathname;
-            return path.split('/').filter(Boolean).pop() || 'unknown';
-        } catch (e) {
-            return 'unknown';
-        }
-    }
-
-    function isMediaPage() {
-        try {
-            const path = win.location && win.location.pathname;
-            return typeof path === 'string' && /\/media\/?$/.test(path);
-        } catch (e) {
-            return false;
-        }
-    }
-
-    // Profile media timelines reach the page in several shapes: the plain
-    // GraphQL envelope, dehydrated state, Seroval hydration tables and RSC
-    // chunks that nest the same payload inside arrays. Walk the object instead
-    // of trusting one path, otherwise a nested timeline looks like "no data".
-    const TIMELINE_MAX_DEPTH = 12;
-    const TIMELINE_MAX_NODES = 50000;
-
-    function scanMediaPayload(root) {
-        const timelines = [];
-        const seen = new Set();
-        let nodes = 0;
-        let screenName = null;
-
-        (function walk(node, depth) {
-            if (!node || typeof node !== 'object') return;
-            if (depth > TIMELINE_MAX_DEPTH || nodes > TIMELINE_MAX_NODES) return;
-            if (seen.has(node)) return;
-
-            seen.add(node);
-            nodes++;
-
-            // The payload also carries the profile, even when the timeline is
-            // empty. Remember it so the fallback can be attached to the right
-            // user later, after an in-app navigation.
-            if (!screenName && node.legacy && typeof node.legacy.screen_name === 'string' &&
-                (node.__typename === 'User' || node.rest_id)) {
-                screenName = node.legacy.screen_name;
-            }
-
-            if (Array.isArray(node.instructions)) {
-                // `timeline.instructions` is the only list we care about.
-                timelines.push(node.instructions);
-                return;
-            }
-
-            if (Array.isArray(node)) {
-                for (let i = 0; i < node.length; i++) walk(node[i], depth + 1);
-                return;
-            }
-
-            const keys = Object.keys(node);
-            for (let i = 0; i < keys.length; i++) walk(node[keys[i]], depth + 1);
-        })(root, 0);
-
-        return { timelines, screenName };
-    }
-
-    function timelineItems(instructions) {
-        const items = [];
-
-        for (let i = 0; i < instructions.length; i++) {
-            const instruction = instructions[i];
-            if (!instruction || typeof instruction !== 'object') continue;
-
-            if (Array.isArray(instruction.entries)) {
-                for (let j = 0; j < instruction.entries.length; j++) items.push(instruction.entries[j]);
-            }
-
-            if (Array.isArray(instruction.moduleItems)) {
-                for (let j = 0; j < instruction.moduleItems.length; j++) {
-                    const module = instruction.moduleItems[j];
-                    if (!module || !Array.isArray(module.items)) continue;
-                    for (let k = 0; k < module.items.length; k++) items.push(module.items[k]);
-                }
-            }
-        }
-
-        return items;
-    }
-
-    // Entries can carry the tweet directly (`content.itemContent`) or wrapped
-    // by a module item (`item.itemContent` / `item.item.itemContent`).
-    function tweetOf(item) {
-        if (!item || typeof item !== 'object') return null;
-
-        const candidates = [
-            item.content && item.content.itemContent,
-            item.itemContent,
-            item.item && item.item.itemContent
-        ];
-
-        for (let i = 0; i < candidates.length; i++) {
-            const content = candidates[i];
-            const tweet = content && content.tweet_results && content.tweet_results.result;
-            if (tweet && typeof tweet === 'object') return tweet;
-        }
-
-        return null;
-    }
-
-    // Summarises a profile media timeline so the console shows whether X sent
-    // pictures or filtered them before the browser ever saw them.
-    function collectTimelineMedia(data) {
-        const scanned = scanMediaPayload(data);
-        const timelines = scanned.timelines;
-        if (!timelines.length) return null;
-
-        let entries = 0;
-        let tweets = 0;
-        const media = [];
-        const seenTimelines = new Set();
-
-        for (let t = 0; t < timelines.length; t++) {
-            const instructions = timelines[t];
-            if (seenTimelines.has(instructions)) continue;
-            seenTimelines.add(instructions);
-
-            const items = timelineItems(instructions);
-            entries += items.length;
-
-            for (let j = 0; j < items.length; j++) {
-                const tweet = tweetOf(items[j]);
-                if (!tweet) continue;
-
-                tweets++;
-                const inner = tweet.tweet || tweet;
-                const list = (Array.isArray(inner.media_entities2) && inner.media_entities2.length)
-                    ? inner.media_entities2
-                    : (inner.legacy && inner.legacy.extended_entities && inner.legacy.extended_entities.media);
-                if (!Array.isArray(list)) continue;
-                for (let k = 0; k < list.length; k++) media.push(list[k]);
-            }
-        }
-
-        return { entries, tweets, media, screenName: scanned.screenName };
-    }
-
-    function reportMediaResponse(source, data) {
-        try {
-            if (data && Array.isArray(data.errors) && data.errors.length) {
-                console.warn('[AgebypassX] ' + source + ' errors:', data.errors);
-            }
-
-            const info = collectTimelineMedia(data);
-            if (!info) {
-                log('Media payload without a timeline:', source);
-                return;
-            }
-
-            // Always visible on media pages: this is the line that tells us
-            // whether the photos were filtered server-side or not.
-            console.info('[AgebypassX] ' + source + ': ' + info.entries + ' entries, ' +
-                info.tweets + ' tweets, ' + info.media.length + ' media');
-
-            if (DEBUG) {
-                log('Media types:', info.media.map(m => m && m.type));
-                log('Media flags:', info.media.map(m => ({
-                    sensitive: !!(m && m.possibly_sensitive),
-                    warning: !!(m && m.sensitive_media_warning),
-                    blur: !!(m && m.media_visibility_results &&
-                        m.media_visibility_results.blurred_image_interstitial),
-                    availability: m && m.ext_media_availability && m.ext_media_availability.status
-                })));
-            }
-
-            if (info.media.length === 0) {
-                // The response may arrive before the route changes (X
-                // prefetches the media tab), so remember the user regardless of
-                // the current URL; the route watcher shows the panel on arrival.
-                if (info.screenName) rememberEmptyMedia(info.screenName);
-                if (isMediaPage()) noteEmptyMediaTab(info.screenName || screenNameFromPath());
-            } else if (info.screenName) {
-                forgetEmptyMedia(info.screenName);
-            }
-        } catch (e) {
-            warn('Media report failed', e);
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Empty media tab: X filters the grid server-side, but the same photos are
-    // reachable through profile search (`from:user filter:media`). Offer that
-    // route instead of leaving the tab as a dead end.
-    // -----------------------------------------------------------------------
-    const FALLBACK_ATTEMPTS = 40;
-    const FALLBACK_INTERVAL = 500;
-    const EMPTY_MEDIA_TTL = 10 * 60 * 1000;
-
-    // Per-profile state, so navigating between media tabs in the same session
-    // keeps working instead of stopping after the first panel.
-    const emptyMedia = new Map();
-    const notedUsers = new Set();
-    let currentPanel = null;
-    let currentPanelUser = null;
-
-    function rememberEmptyMedia(screenName) {
-        try {
-            emptyMedia.set(String(screenName).toLowerCase(), Date.now());
-        } catch (e) {}
-    }
-
-    function isEmptyMedia(screenName) {
-        try {
-            const at = emptyMedia.get(String(screenName).toLowerCase());
-            return typeof at === 'number' && Date.now() - at < EMPTY_MEDIA_TTL;
-        } catch (e) {
-            return false;
-        }
-    }
-
-    function forgetEmptyMedia(screenName) {
-        try {
-            const key = String(screenName).toLowerCase();
-            emptyMedia.delete(key);
-
-            if (currentPanelUser && currentPanelUser.toLowerCase() === key) {
-                removeFallbackPanel();
-            }
-        } catch (e) {}
-    }
-
-    function removeFallbackPanel() {
-        try {
-            if (currentPanel && currentPanel.parentNode) {
-                currentPanel.parentNode.removeChild(currentPanel);
-            }
-        } catch (e) {}
-
-        currentPanel = null;
-        currentPanelUser = null;
-    }
-
-    function screenNameFromPath() {
-        try {
-            const path = win.location && win.location.pathname;
-            if (typeof path !== 'string') return null;
-            const match = path.match(/^\/([A-Za-z0-9_]+)\/media\/?$/);
-            return match ? match[1] : null;
-        } catch (e) {
-            return null;
-        }
-    }
-
-    function searchMediaUrl(screenName) {
-        const origin = (win.location && win.location.origin) || 'https://x.com';
-        return origin + '/search?q=' +
-            encodeURIComponent('from:' + screenName + ' filter:media') + '&f=image';
-    }
-
-    function insertFallbackPanel(panel) {
-        try {
-            if (!doc || typeof doc.querySelector !== 'function') return false;
-
-            const empty = doc.querySelector('[data-testid="emptyState"]');
-            if (empty && empty.parentNode) {
-                empty.parentNode.insertBefore(panel, empty);
-                return true;
-            }
-
-            const column = doc.querySelector('[data-testid="primaryColumn"]');
-            if (column) {
-                column.insertBefore(panel, column.firstChild);
-                return true;
-            }
-        } catch (e) {
-            warn('Could not insert the media fallback panel', e);
-        }
-
-        return false;
-    }
-
-    function buildFallbackPanel(screenName, searchUrl) {
-        const panel = doc.createElement('div');
-        panel.setAttribute('data-agebypassx', 'media-fallback');
-        panel.style.cssText = 'margin:12px 16px;padding:16px;border:1px solid rgba(127,127,127,.35);' +
-            'border-radius:16px;background:rgba(127,127,127,.08);font:15px/1.4 ' +
-            '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:inherit;';
-
-        const title = doc.createElement('div');
-        title.style.cssText = 'font-weight:700;margin-bottom:4px;';
-        title.textContent = 'X does not send these photos to the media tab';
-        panel.appendChild(title);
-
-        const body = doc.createElement('div');
-        body.style.cssText = 'opacity:.8;margin-bottom:12px;';
-        body.textContent = 'The photos are in the timeline. You can see them all with a profile search.';
-        panel.appendChild(body);
-
-        const actions = doc.createElement('div');
-        actions.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;';
-
-        const primary = doc.createElement('a');
-        primary.href = searchUrl;
-        primary.textContent = 'See all photos';
-        primary.style.cssText = 'padding:8px 16px;border-radius:999px;background:#1d9bf0;color:#fff;' +
-            'font-weight:700;text-decoration:none;';
-        actions.appendChild(primary);
-
-        const secondary = doc.createElement('a');
-        secondary.href = '/' + screenName;
-        secondary.textContent = 'Open the timeline';
-        secondary.style.cssText = 'padding:8px 16px;border-radius:999px;border:1px solid rgba(127,127,127,.4);' +
-            'color:inherit;font-weight:700;text-decoration:none;';
-        actions.appendChild(secondary);
-
-        panel.appendChild(actions);
-        return panel;
-    }
-
-    function showFallbackPanel(screenName, searchUrl) {
-        if (!doc || typeof doc.createElement !== 'function') return;
-        if (screenNameFromPath() !== screenName) return;
-        if (currentPanelUser === screenName && currentPanel && currentPanel.parentNode) return;
-
-        removeFallbackPanel();
-
-        const panel = buildFallbackPanel(screenName, searchUrl);
-        let attempts = 0;
-
-        (function tryInsert() {
-            if (currentPanel) return;
-            if (screenNameFromPath() !== screenName) return;
-
-            if (insertFallbackPanel(panel)) {
-                currentPanel = panel;
-                currentPanelUser = screenName;
-                return;
-            }
-
-            if (++attempts >= FALLBACK_ATTEMPTS) return;
-
-            try {
-                win.setTimeout(tryInsert, FALLBACK_INTERVAL);
-            } catch (e) {
-                warn('Could not schedule the media fallback panel', e);
-            }
-        })();
-    }
-
-    function noteEmptyMediaTab(screenName) {
-        const name = screenName || screenNameFromPath();
-        if (!name) return;
-
-        if (!notedUsers.has(name.toLowerCase())) {
-            notedUsers.add(name.toLowerCase());
-
-            // Always visible: this is the way out when X returns an empty grid.
-            console.info('[AgebypassX] Media tab empty; photos available via search: ' +
-                searchMediaUrl(name));
-        }
-
-        showFallbackPanel(name, searchMediaUrl(name));
-    }
-
-    // Re-evaluates the current URL. Called on history changes, on popstate and
-    // by a slow interval, so both direct loads and in-app navigation work.
-    function checkMediaRoute() {
-        try {
-            const name = screenNameFromPath();
-
-            if (!name || !isEmptyMedia(name)) {
-                removeFallbackPanel();
-                return;
-            }
-
-            noteEmptyMediaTab(name);
-        } catch (e) {
-            warn('Media route check failed', e);
-        }
-    }
-
-    (function hookMediaRoute() {
-        try {
-            const history = win.history;
-
-            if (history) {
-                const methods = ['pushState', 'replaceState'];
-
-                for (let i = 0; i < methods.length; i++) {
-                    const method = methods[i];
-                    const native = history[method];
-                    if (typeof native !== 'function') continue;
-
-                    const wrapped = function () {
-                        const result = native.apply(this, arguments);
-                        checkMediaRoute();
-                        return result;
-                    };
-
-                    spoofAs(native, wrapped, method);
-
-                    try {
-                        history[method] = wrapped;
-                    } catch (e) {
-                        warn('Could not wrap history.' + method, e);
-                    }
-                }
-            }
-
-            if (typeof win.addEventListener === 'function') {
-                win.addEventListener('popstate', checkMediaRoute);
-            }
-        } catch (e) {
-            warn('Could not hook history', e);
-        }
-
-        if (typeof win.setInterval === 'function') {
-            try {
-                win.setInterval(checkMediaRoute, 500);
-            } catch (e) {
-                warn('Could not start the media route watcher', e);
-            }
-        }
-
-        checkMediaRoute();
-    })();
-
     (function hookResponseJson() {
         try {
             const responseProto = win.Response && win.Response.prototype;
@@ -950,9 +523,6 @@
                         // are checked only when they plausibly appear.
                         if (isXApiUrl(response.url)) {
                             patch(data, 'all');
-
-                            const op = operationName(response.url);
-                            if (/media/i.test(op)) reportMediaResponse(op, data);
                         } else if (hasFlagsNearby(data, 3)) {
                             patch(data);
                         }
@@ -1118,6 +688,132 @@
             warn('Could not install $R hook', e);
         }
     })();
+
+    // -----------------------------------------------------------------------
+    // Empty media tab: X filters the grid server-side, but the same photos are
+    // reachable through profile search (`from:user filter:media`). X renders
+    // its own empty state on that tab, so the card only watches the DOM: no
+    // payload state, no per-profile memory and no history hooks.
+    // -----------------------------------------------------------------------
+    const MEDIA_PANEL_VALUE = 'media-fallback';
+    const MEDIA_PANEL_SELECTOR = '[data-agebypassx="' + MEDIA_PANEL_VALUE + '"]';
+    const MEDIA_WATCH_INTERVAL = 500;
+    let panelUser = null;
+    let loggedUser = null;
+
+    function screenNameFromPath() {
+        try {
+            const path = win.location && win.location.pathname;
+            if (typeof path !== 'string') return null;
+            const match = path.match(/^\/([A-Za-z0-9_]+)\/media\/?$/);
+            return match ? match[1] : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function searchMediaUrl(screenName) {
+        const origin = (win.location && win.location.origin) || 'https://x.com';
+        return origin + '/search?q=' +
+            encodeURIComponent('from:' + screenName + ' filter:media') + '&f=image';
+    }
+
+    function buildFallbackPanel(screenName) {
+        const panel = doc.createElement('div');
+        panel.setAttribute('data-agebypassx', MEDIA_PANEL_VALUE);
+        panel.style.cssText = 'margin:12px 16px;padding:16px;border:1px solid rgba(127,127,127,.35);' +
+            'border-radius:16px;background:rgba(127,127,127,.08);font:15px/1.4 ' +
+            '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:inherit;';
+
+        const title = doc.createElement('div');
+        title.style.cssText = 'font-weight:700;margin-bottom:4px;';
+        title.textContent = 'X does not send these photos to the media tab';
+        panel.appendChild(title);
+
+        const body = doc.createElement('div');
+        body.style.cssText = 'opacity:.8;margin-bottom:12px;';
+        body.textContent = 'The photos are in the timeline. You can see them all with a profile search.';
+        panel.appendChild(body);
+
+        const actions = doc.createElement('div');
+        actions.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;';
+
+        const primary = doc.createElement('a');
+        primary.href = searchMediaUrl(screenName);
+        primary.textContent = 'See all photos';
+        primary.style.cssText = 'padding:8px 16px;border-radius:999px;background:#1d9bf0;color:#fff;' +
+            'font-weight:700;text-decoration:none;';
+        actions.appendChild(primary);
+
+        const secondary = doc.createElement('a');
+        secondary.href = '/' + screenName;
+        secondary.textContent = 'Open the timeline';
+        secondary.style.cssText = 'padding:8px 16px;border-radius:999px;border:1px solid rgba(127,127,127,.4);' +
+            'color:inherit;font-weight:700;text-decoration:none;';
+        actions.appendChild(secondary);
+
+        panel.appendChild(actions);
+        return panel;
+    }
+
+    function removeMediaPanel() {
+        try {
+            const panels = doc.querySelectorAll(MEDIA_PANEL_SELECTOR);
+
+            for (let i = 0; i < panels.length; i++) {
+                const node = panels[i];
+                if (node && node.parentNode) node.parentNode.removeChild(node);
+            }
+        } catch (e) {
+            warn('Could not remove the media panel', e);
+        }
+
+        panelUser = null;
+    }
+
+    // X only renders its empty state once the media timeline came back empty,
+    // so that node is both the trigger and the insertion point. A light poll
+    // covers direct loads, in-app navigation, prefetches and re-renders without
+    // keeping any state about the payloads.
+    function refreshMediaPanel() {
+        try {
+            if (!doc || typeof doc.querySelector !== 'function') return;
+
+            const user = screenNameFromPath();
+            const empty = user ? doc.querySelector('[data-testid="emptyState"]') : null;
+
+            if (!empty || !empty.parentNode) {
+                if (panelUser) removeMediaPanel();
+                loggedUser = null;
+                return;
+            }
+
+            if (panelUser === user && doc.querySelector(MEDIA_PANEL_SELECTOR)) return;
+
+            removeMediaPanel();
+
+            empty.parentNode.insertBefore(buildFallbackPanel(user), empty);
+            panelUser = user;
+
+            if (loggedUser !== user) {
+                loggedUser = user;
+                console.info('[AgebypassX] Media tab empty; photos available via search: ' +
+                    searchMediaUrl(user));
+            }
+        } catch (e) {
+            warn('Media panel check failed', e);
+        }
+    }
+
+    if (typeof win.setInterval === 'function') {
+        try {
+            win.setInterval(refreshMediaPanel, MEDIA_WATCH_INTERVAL);
+        } catch (e) {
+            warn('Could not start the media panel watcher', e);
+        }
+    }
+
+    refreshMediaPanel();
 
     // One line is always printed so users can confirm the script loaded.
     // Everything else stays behind DEBUG.
